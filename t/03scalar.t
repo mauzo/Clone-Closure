@@ -9,7 +9,7 @@
 
 BEGIN { $| = 1; print "1..10\n"; }
 END {print "not ok 1\n" unless $loaded;}
-use Clone qw( clone );
+use Clone::Closure qw( clone );
 use Data::Dumper;
 $loaded = 1;
 print "ok 1\n";
@@ -24,7 +24,7 @@ package Test::Scalar;
 
 use vars @ISA;
 
-@ISA = qw(Clone);
+@ISA = qw(Clone::Closure);
 
 sub new
   {
@@ -54,7 +54,7 @@ $$a == $$b ? ok : not_ok;
 $a != $b ? ok : not_ok;
 
 my $c = \"test 2 scalar";
-my $d = Clone::clone($c, 2);
+my $d = Clone::Closure::clone($c, 2);
 
 $$c == $$d ? ok : not_ok;
 $c != $d ? ok : not_ok;

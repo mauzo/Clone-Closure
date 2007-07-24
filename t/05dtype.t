@@ -9,7 +9,7 @@
 
 BEGIN { $| = 1; print "1..2\n"; }
 END {print "not ok 1\n" unless $loaded;}
-use Clone;
+use Clone::Closure;
 $loaded = 1;
 print "ok 1\n";
 
@@ -38,7 +38,7 @@ use strict;
 
 package Test::Hash;
 
-@Test::Hash::ISA = qw( Clone );
+@Test::Hash::ISA = qw( Clone::Closure );
 
 sub new()
 {

@@ -58,7 +58,7 @@
 require 't/dump.pl';
 
 # use Storable qw(dclone);
-use Clone qw(clone);
+use Clone::Closure qw(clone);
 
 print "1..9\n";
 
@@ -86,7 +86,7 @@ print "ok 3\n";
 print "not " unless $got eq $dumped; 
 print "ok 4\n";
 
-package FOO; @ISA = qw(Clone);
+package FOO; @ISA = qw(Clone::Closure);
 
 sub make {
 	my $self = bless {};

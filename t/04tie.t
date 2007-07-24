@@ -9,7 +9,7 @@
 
 BEGIN { $| = 1; print "1..5\n"; }
 END {print "not ok 1\n" unless $loaded;}
-use Clone qw( clone );
+use Clone::Closure qw( clone );
 $loaded = 1;
 print "ok 1\n";
 

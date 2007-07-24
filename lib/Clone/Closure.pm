@@ -1,5 +1,4 @@
-# $Id: Clone.pm,v 0.23 2007-04-20 05:40:27 ray Exp $
-package Clone;
+package Clone::Closure;
 
 use strict;
 use Carp;
@@ -7,18 +6,16 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 require DynaLoader;
-require AutoLoader;
 
 @ISA = qw(Exporter DynaLoader);
 # Items to export into callers namespace by default. Note: do not export
 # names by default without a very good reason. Use EXPORT_OK instead.
 # Do not simply export all your public functions/methods/constants.
-@EXPORT = qw();
 @EXPORT_OK = qw( clone );
 
-$VERSION = '0.23';
+$VERSION = '0.01';
 
-bootstrap Clone $VERSION;
+bootstrap Clone::Closure $VERSION;
 
 # Preloaded methods go here.
 

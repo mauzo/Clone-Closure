@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+
+use blib;
+use Clone qw/clone/;
+
+$\ = $, = "\n";
+
+my $x = {};
+my $y = sub { $x };
+my $z = clone $y;
+
+print $x, $z->();
+
+sub clos {
+    my $c = {};
+    return sub { $c };
+}
+
+my $c = clos;
+my $d = clone $c;
+
+my @l;
+for my $l (1..10) {
+    push @l, sub { $l };
+}
+my $m = clone $l[0];
+
+my $e = eval q{
+    my $e = 1;
+    sub { $e };
+};
+my $f = clone $e;
+
+sub bc {
+    {
+        my $bc = {};
+        return sub { $bc };
+    }
+}
+my $bc = bc;
+my $bd = clone $bc;
+
+sub lpc {
+    my @lc;
+    for my $lc (1..10) {
+        push @lc, sub { $lc };
+    }
+    return $lc[0];
+}
+my $lc = lpc;
+my $ld = clone $lc;
+
+sub ec {
+    my $ec = 1;
+    return eval q{ sub { $ec } };
+}
+my $ec = ec;
+my $ed = clone $ec;
+
+sub eec {
+    return eval q{ my $eec; sub { $eec } };
+}
+my $eec = eec;
+my $eed = clone $eec;

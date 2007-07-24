@@ -2,7 +2,7 @@
 
 use strict;
 
-use Clone;
+use Clone::Closure;
 use Test::More tests => 3;
 
 SKIP: {
@@ -16,11 +16,11 @@ SKIP: {
     my $x = { a => "worked\n" }; 
     my $y = $x;
     weaken($y);
-    my $z = Clone::clone($x);
-    ok( Dumper($x) eq Dumper($z), "Cloned weak reference");
+    my $z = Clone::Closure::clone($x);
+    ok( Dumper($x) eq Dumper($z), "Clone::Closured weak reference");
   }
 
-  ## RT 21859: Clone segfault (isolated example)
+  ## RT 21859: Clone::Closure segfault (isolated example)
   SKIP: {
     my $string = "HDDR-WD-250JS";
     eval {
@@ -33,8 +33,8 @@ SKIP: {
           substr ($string, 0, 4),
           substr ($string, 4),
         );
-    my $z = Clone::clone($string);
-    ok( Dumper($string) eq Dumper($z), "Cloned magic utf8");
+    my $z = Clone::Closure::clone($string);
+    ok( Dumper($string) eq Dumper($z), "Clone::Closured magic utf8");
   }
 }
 
@@ -48,8 +48,8 @@ SKIP: {
     $x = $ENV{$_};
     last if ( $x && length($x) > 0 );
   }
-  my $y = Clone::clone($x);
-  ## ok(Clone::clone($tainted), "Tainted input");
+  my $y = Clone::Closure::clone($x);
+  ## ok(Clone::Closure::clone($tainted), "Tainted input");
   ok( Dumper($x) eq Dumper($y), "Tainted input");
 }
 
