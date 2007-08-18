@@ -3,7 +3,6 @@
 use warnings;
 use strict;
 
-use blib;
 use Clone::Closure qw/clone/;
 
 use Test::More;
@@ -133,8 +132,8 @@ my $ac = [ ac ];
 my $ad = clone $ac;
 
 BEGIN { $tests += 3 }
-is   $ac->[0]->(), $ac->[1]->(), 'sanity check';
+is   rv $ac->[0], rv $ac->[1], 'sanity check';
 isnt rv $ac->[0], rv $ad->[0], 'lexical in closure in array is cloned';
-is   $ad->[0]->(), $ad->[1]->(), 'co-cloned subs share lexicals';
+is   rv $ad->[0], rv $ad->[1], 'co-cloned subs share lexicals';
 
 BEGIN { plan tests => $tests }
