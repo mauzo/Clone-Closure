@@ -1,7 +1,7 @@
 # $Id: MANIFEST,v 0.19 2006-10-08 03:37:20 ray Exp $
 Changes
 lib/Clone/Closure.pm
-Clone.xs
+Closure.xs
 Makefile.PL
 MANIFEST
 t/01array.t
