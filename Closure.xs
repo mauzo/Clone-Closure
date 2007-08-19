@@ -13,9 +13,8 @@ do {									\
 	croak("Can't store clone in seen hash (HSEEN)");		\
     }									\
     else {	\
-  TRACEME(("storing ref = 0x%x clone = 0x%x\n", x, y));	\
-  TRACEME(("clone = 0x%x(%d)\n", y, SvREFCNT(y)));	\
-  TRACEME(("ref = 0x%x(%d)\n", x, SvREFCNT(x)));	\
+  TRACE_SV("ref", "SEEN", x);                           \
+  TRACE_SV("clone", "SEEN", y);                         \
     }									\
 } while (0)
 
@@ -36,6 +35,9 @@ static HV *HSEEN;
 #define TRACEME(a)
 #endif
 
+#define TRACE_SV(action, name, sv) \
+    TRACEME(("%s (%s) = 0x%x(%d)\n", action, name, sv, SvREFCNT(sv)))
+
 static SV *
 hv_clone (SV * ref, SV * target, int depth)
 {
@@ -46,7 +48,7 @@ hv_clone (SV * ref, SV * target, int depth)
 
   assert(SvTYPE(ref) == SVt_PVHV);
 
-  TRACEME(("ref (HV) = 0x%x(%d)\n", ref, SvREFCNT(ref)));
+  TRACE_SV("ref", "HV", ref);
 
   hv_iterinit (self);
   while (next = hv_iternext (self))
@@ -56,7 +58,8 @@ hv_clone (SV * ref, SV * target, int depth)
                 sv_clone (hv_iterval (self, next), recur), 0);
     }
 
-  TRACEME(("clone (HV) = 0x%x(%d)\n", clone, SvREFCNT(clone)));
+  TRACE_SV("clone", "HV", clone);
+
   return (SV *) clone;
 }
 
@@ -73,7 +76,7 @@ av_clone (SV * ref, SV * target, int depth)
 
   assert(SvTYPE(ref) == SVt_PVAV);
 
-  TRACEME(("ref (AV) = 0x%x(%d)\n", ref, SvREFCNT(ref)));
+  TRACE_SV("ref", "AV", ref);
 
   if (SvREFCNT(ref) > 1)
     CLONE_STORE(ref, (SV *)clone);
@@ -88,7 +91,7 @@ av_clone (SV * ref, SV * target, int depth)
 	av_store (clone, i, sv_clone (*svp, recur));
     }
 
-  TRACEME(("clone (AV) = 0x%x(%d)\n", clone, SvREFCNT(clone)));
+  TRACE_SV("clone", "AV", clone);
   return (SV *) clone;
 }
 
@@ -101,7 +104,7 @@ rv_clone (SV * ref, int depth)
 
   assert(SvROK(ref));
 
-  TRACEME(("ref (RV) = 0x%x(%d)\n", ref, SvREFCNT(ref)));
+  TRACE_SV("ref", "RV", ref);
 
   if (!SvROK (ref))
     return NULL;
@@ -114,7 +117,7 @@ rv_clone (SV * ref, int depth)
   else
     clone = newRV_inc(sv_clone (SvRV(ref), depth));
     
-  TRACEME(("clone (RV) = 0x%x(%d)\n", clone, SvREFCNT(clone)));
+  TRACE_SV("clone", "RV", clone);
   return clone;
 }
 
@@ -134,7 +137,8 @@ pad_clone (SV *ref, SV * target, int depth)
     int recur = depth ? depth - 1 : 0;
 
     for (i = av_len(padn); i >= 0; --i) {
-        SV  **name_p, *name_sv, **val_p, *val_sv, *new_sv;
+        SV  **name_p, *name_sv, **val_p, *val_sv;
+        SV  **old_p, *old_sv, *new_sv;
         const char *name;
         CV *lexscope;
 
@@ -152,6 +156,8 @@ pad_clone (SV *ref, SV * target, int depth)
         val_p    = av_fetch(padr, i, 0);
         val_sv   = val_p ? *val_p : &PL_sv_undef;
 
+        TRACE_SV("ref", name, val_sv);
+
         /* start with the scope that declared the lexical... */
         lexscope = SvFAKE(name_sv) ? pad_findscope(cv, name) : cv;
 
@@ -163,21 +169,29 @@ pad_clone (SV *ref, SV * target, int depth)
         /* if this lexical was defined in a scope that may run more than
          * once, it needs cloning; otherwise, it doesn't. */
         if ( lexscope && !CvUNIQUE(lexscope) ) {
-            TRACEME(("ref (%s) = 0x%x(%d)\n", name, val_sv, SvREFCNT(val_sv)));
-
             new_sv  = sv_clone(val_sv, recur);
-
-            TRACEME(("clone (%s) = 0x%x(%d)\n", name, new_sv,
-                SvREFCNT(new_sv)));
+            
+            TRACE_SV("ref, again", name, val_sv);
+            TRACE_SV("clone", name, new_sv);
         }
         else {
-            new_sv = val_sv;
+            new_sv = SvREFCNT_inc(val_sv);
             CLONE_STORE(val_sv, new_sv);
 
-            TRACEME(("copy (%s) = 0x%x(%d)\n", name, val_sv,
-                SvREFCNT(val_sv)));
+            TRACE_SV("ref, again", name, val_sv);
+            TRACE_SV("copy", name, new_sv);
         }
-        av_store(padv, i, new_sv);
+
+        old_p    = av_fetch(padv, i, 0);
+        old_sv   = old_p ? *old_p : &PL_sv_undef;
+
+        /* can't use av_store as the refcounts get wrong */
+        (AvARRAY(padv))[i] = new_sv;
+        /*av_store(padv, i, SvREFCNT_inc(new_sv));*/
+
+        SvREFCNT_dec(old_sv);
+        TRACE_SV("drop", name, old_sv);
+
     }
 }
 
@@ -256,15 +270,16 @@ sv_clone (SV * ref, int depth)
   UV visible = (SvREFCNT(ref) > 1);
   int magic_ref = 0;
 
-  TRACEME(("ref (SV) = 0x%x(%d)\n", ref, SvREFCNT(ref)));
+  TRACE_SV("ref", "SV", ref);
 
   if (depth == 0)
     return SvREFCNT_inc(ref);
 
   if (visible && (seen = CLONE_FETCH(ref)))
     {
-      TRACEME(("fetch (SV) = 0x%x(%d)\n", *seen, SvREFCNT(*seen)));
-      return SvREFCNT_inc(*seen);
+      SvREFCNT_inc(*seen);
+      TRACE_SV("fetch", "SV", *seen);
+      return *seen;
     }
 
   TRACEME(("switch: (0x%x)\n", ref));
@@ -411,7 +426,6 @@ sv_clone (SV * ref, int depth)
   else if (SvROK (ref))
     {
       SvROK_on(clone);  /* only set if ROK is set if ref */
-      /*TRACEME(("clone (ROK) = 0x%x(%d)\n", clone, SvREFCNT(clone)));*/
       SvRV(clone) = sv_clone (SvRV(ref), depth); /* Clone the referent */
       if (sv_isobject (ref))
       {
@@ -419,7 +433,7 @@ sv_clone (SV * ref, int depth)
       }
     }
 
-  TRACEME(("clone (SV) = 0x%x(%d)\n", clone, SvREFCNT(clone)));
+  TRACE_SV("clone", "SV", clone);
   return clone;
 }
 
@@ -438,8 +452,9 @@ clone(self, depth=-1)
 	PREINIT:
 	SV *    clone = &PL_sv_undef;
 	PPCODE:
-	/*TRACEME(("ref = 0x%x\n", self));*/
 	clone = sv_clone(self, depth);
+        TRACEME(("Done clone, about to clear HSEEN\n"));
 	hv_clear(HSEEN);  /* Free HV */
+        TRACEME(("Cleared HSEEN\n"));
 	EXTEND(SP,1);
 	PUSHs(sv_2mortal(clone));

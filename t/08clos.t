@@ -32,9 +32,6 @@ my $fc = clone $fb;
 BEGIN { $tests += 1 }
 is rv $fb, rv $fc, 'lexical from block-in-file is copied';
 
-warn '# fb: ' . dump rv $fb;
-warn '# fc: ' . dump rv $fc;
-
 my $ef = {};
 my $efc = eval q{ sub { \$ef } };
 my $efd = clone $efc;
@@ -135,5 +132,46 @@ BEGIN { $tests += 3 }
 is   rv $ac->[0], rv $ac->[1], 'sanity check';
 isnt rv $ac->[0], rv $ad->[0], 'lexical in closure in array is cloned';
 is   rv $ad->[0], rv $ad->[1], 'co-cloned subs share lexicals';
+
+my $gone = 0;
+
+BEGIN {
+    package t::Gone;
+
+    sub new { return bless [], $_[0]; }
+
+    sub DESTROY { $gone++; }
+}
+
+BEGIN { $tests += 2 }
+
+{
+    my $x = t::Gone->new;
+    my $leak = sub { $x };
+    my $leal = clone $leak;
+
+    ok !$gone, 'sanity check';
+}
+
+ok $gone == 1, 'copied lexical is destroyed';
+
+BEGIN { $tests += 3 }
+
+$gone = 0;
+
+sub leam {
+    my $x = t::Gone->new;
+    return sub { $x };
+}
+
+{
+    my $leam = leam;
+    my $lean = clone $leam;
+
+    ok !$gone, 'sanity check';
+}
+
+ok $gone,       'cloned lexical is destroyed';
+ok $gone == 2,  'both copies are destroyed';
 
 BEGIN { plan tests => $tests }
