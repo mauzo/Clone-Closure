@@ -1,9 +1,23 @@
-# $Id: MANIFEST,v 0.19 2006-10-08 03:37:20 ray Exp $
 Changes
-lib/Clone/Closure.pm
 Closure.xs
+cop
+inc/Module/AutoInstall.pm
+inc/Module/Install.pm
+inc/Module/Install/AutoInstall.pm
+inc/Module/Install/Base.pm
+inc/Module/Install/Can.pm
+inc/Module/Install/Fetch.pm
+inc/Module/Install/Include.pm
+inc/Module/Install/Makefile.pm
+inc/Module/Install/Metadata.pm
+inc/Module/Install/PRIVATE/PPPort.pm
+inc/Module/Install/Win32.pm
+inc/Module/Install/WriteAll.pm
+lib/Clone/Closure.pm
 Makefile.PL
 MANIFEST
+META.yml			Module meta-data (added by MakeMaker)
+ppport.h
 t/01array.t
 t/02hash.t
 t/03scalar.t
@@ -11,7 +25,7 @@ t/04tie.t
 t/05dtype.t
 t/06refcnt.t
 t/07magic.t
+t/08clos.t
 t/dclone.t
 t/dump.pl
 t/tied.pl
-META.yml                                 Module meta-data (added by MakeMaker)

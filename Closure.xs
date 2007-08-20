@@ -1,8 +1,17 @@
-#include <assert.h>
-
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+
+#include "ppport.h"
+
+#ifdef DEBUG_CLONE
+#define TRACEME(a) warn a;
+#else
+#define TRACEME(a)
+#endif
+
+#define TRACE_SV(action, name, sv) \
+    TRACEME(("%s (%s) = 0x%x(%d)\n", action, name, sv, SvREFCNT(sv)))
 
 #define CLONE_KEY(x) ((char *) x) 
 
@@ -29,15 +38,6 @@ static CV *pad_findscope(CV *, const char *);
 
 static HV *HSEEN;
 
-#ifdef DEBUG_CLONE
-#define TRACEME(a) warn a;
-#else
-#define TRACEME(a)
-#endif
-
-#define TRACE_SV(action, name, sv) \
-    TRACEME(("%s (%s) = 0x%x(%d)\n", action, name, sv, SvREFCNT(sv)))
-
 static SV *
 hv_clone (SV * ref, SV * target, int depth)
 {
@@ -46,17 +46,14 @@ hv_clone (SV * ref, SV * target, int depth)
   HE *next = NULL;
   int recur = depth ? depth - 1 : 0;
 
-  assert(SvTYPE(ref) == SVt_PVHV);
-
   TRACE_SV("ref", "HV", ref);
 
   hv_iterinit (self);
-  while (next = hv_iternext (self))
-    {
+  while (next = hv_iternext (self)) {
       SV *key = hv_iterkeysv (next);
       hv_store_ent (clone, key, 
                 sv_clone (hv_iterval (self, next), recur), 0);
-    }
+  }
 
   TRACE_SV("clone", "HV", clone);
 
@@ -74,8 +71,6 @@ av_clone (SV * ref, SV * target, int depth)
   int i = 0;
   int recur = depth ? depth - 1 : 0;
 
-  assert(SvTYPE(ref) == SVt_PVAV);
-
   TRACE_SV("ref", "AV", ref);
 
   if (SvREFCNT(ref) > 1)
@@ -84,12 +79,11 @@ av_clone (SV * ref, SV * target, int depth)
   arrlen = av_len (self);
   av_extend (clone, arrlen);
 
-  for (i = 0; i <= arrlen; i++)
-    {
+  for (i = 0; i <= arrlen; i++) {
       svp = av_fetch (self, i, 0);
       if (svp)
 	av_store (clone, i, sv_clone (*svp, recur));
-    }
+  }
 
   TRACE_SV("clone", "AV", clone);
   return (SV *) clone;
@@ -102,20 +96,18 @@ rv_clone (SV * ref, int depth)
   SV *rv = NULL;
   UV visible = (SvREFCNT(ref) > 1);
 
-  assert(SvROK(ref));
-
   TRACE_SV("ref", "RV", ref);
 
   if (!SvROK (ref))
     return NULL;
 
-  if (sv_isobject (ref))
-    {
+  if (sv_isobject (ref)) {
       clone = newRV_noinc(sv_clone (SvRV(ref), depth));
       sv_2mortal (sv_bless (clone, SvSTASH (SvRV (ref))));
-    }
-  else
-    clone = newRV_inc(sv_clone (SvRV(ref), depth));
+  }
+  else {
+      clone = newRV_inc(sv_clone (SvRV(ref), depth));
+  }
     
   TRACE_SV("clone", "RV", clone);
   return clone;
@@ -166,6 +158,9 @@ pad_clone (SV *ref, SV * target, int depth)
             lexscope = CvOUTSIDE(lexscope);
         }
 
+        TRACEME(("lexscope: 0x%x%s\n", lexscope, 
+            (lexscope && !CvUNIQUE(lexscope) ? "" : " UNIQUE")));
+
         /* if this lexical was defined in a scope that may run more than
          * once, it needs cloning; otherwise, it doesn't. */
         if ( lexscope && !CvUNIQUE(lexscope) ) {
@@ -191,7 +186,6 @@ pad_clone (SV *ref, SV * target, int depth)
 
         SvREFCNT_dec(old_sv);
         TRACE_SV("drop", name, old_sv);
-
     }
 }
 
@@ -206,17 +200,15 @@ pad_findscope(CV *scope, const char *name)
 
     TRACEME(("searching for %s\n", name));
 
-#define SUB(cv) TRACEME(("scope 0x%x: %s %s\n", cv, \
-    SvFAKE(cv) ? "FAKE" : "", \
-    CvUNIQUE(cv) ? "UNIQUE" : ""))
+#define SUB(cv) TRACEME(("scope 0x%x:%s%s\n", cv, \
+    SvFAKE(cv) ? " FAKE" : "", \
+    CvUNIQUE(cv) ? " UNIQUE" : ""))
+
+#define MOVE_OUT(scp, sq) sq = CvOUTSIDE_SEQ(scp), scp = CvOUTSIDE(scp)
 
     SUB(scope);
 
-    for (
-        seq = CvOUTSIDE_SEQ(scope), scope = CvOUTSIDE(scope);
-        scope;
-        seq = CvOUTSIDE_SEQ(scope), scope = CvOUTSIDE(scope)
-    ) {
+    for ( MOVE_OUT(scope, seq); scope; MOVE_OUT(scope, seq) ) {
         SV **svp, *sv;
         AV  *padlist, *padn;
         I32  off;
@@ -248,7 +240,7 @@ pad_findscope(CV *scope, const char *name)
                 last_fake = scope;
                 continue;
             }
-            
+        
             if (
                 seq > U_32(SvNVX(sv))
                 && seq <= (U32)SvIVX(sv)
@@ -258,6 +250,8 @@ pad_findscope(CV *scope, const char *name)
         }
     }
 
+    TRACEME(("no scope found; returning last_fake = 0x%x\n",
+        last_fake));
     return last_fake;
 }
 
@@ -275,26 +269,29 @@ sv_clone (SV * ref, int depth)
   if (depth == 0)
     return SvREFCNT_inc(ref);
 
-  if (visible && (seen = CLONE_FETCH(ref)))
-    {
+  if ( visible && (seen = CLONE_FETCH(ref)) ) {
       SvREFCNT_inc(*seen);
       TRACE_SV("fetch", "SV", *seen);
       return *seen;
-    }
+  }
 
   TRACEME(("switch: (0x%x)\n", ref));
-  switch (SvTYPE (ref))
-    {
+  switch (SvTYPE (ref)) {
+
       case SVt_NULL:	/* 0 */
         TRACEME(("  NULL\n"));
         clone = newSVsv (ref);
         break;
+
       case SVt_IV:		/* 1 */
         TRACEME(("  IV\n"));
+        /* fall through */
+
       case SVt_NV:		/* 2 */
         TRACEME(("  NV\n"));
         clone = newSVsv (ref);
         break;
+
       case SVt_RV:		/* 3 */
         TRACEME(("  RV\n"));
         clone = NEWSV(1002, 0);
@@ -302,32 +299,41 @@ sv_clone (SV * ref, int depth)
 	/* move the following to SvROK section below */
         /* SvROK_on(clone); */
         break;
+
       case SVt_PV:		/* 4 */
         TRACEME(("  PV\n"));
         clone = newSVsv (ref);
         break;
+
       case SVt_PVIV:		/* 5 */
         TRACEME (("  PVIV\n"));
+        /* fall through */
+
       case SVt_PVNV:		/* 6 */
         TRACEME (("  PVNV\n"));
         clone = newSVsv (ref);
         break;
+
       case SVt_PVMG:	/* 7 */
         TRACEME(("  PVMG\n"));
         clone = newSVsv (ref);
         break;
+
       case SVt_PVAV:	/* 10 */
         TRACEME(("  AV\n"));
         clone = (SV *) newAV();
         break;
+
       case SVt_PVHV:	/* 11 */
         TRACEME(("  HV\n"));
         clone = (SV *) newHV();
         break;
+
       case SVt_PVCV:	/* 12 */
         TRACEME(("  CV\n"));
         clone = (SV *) Perl_cv_clone (aTHX_ (CV *) ref);
         break;
+
       #if PERL_VERSION <= 8
       case SVt_PVBM:	/* 8 */
       #endif
@@ -338,6 +344,7 @@ sv_clone (SV * ref, int depth)
         TRACEME(("  default: 0x%x\n", SvTYPE (ref)));
         clone = SvREFCNT_inc(ref);  /* just return the ref */
         break;
+
       default:
         croak("unknown type of scalar: 0x%x", SvTYPE(ref));
     }
@@ -368,31 +375,29 @@ sv_clone (SV * ref, int depth)
      */
      
     /* 1: TIED */
-  if (SvMAGICAL(ref) )
-    {
+  if (SvMAGICAL(ref) ) {
       MAGIC* mg;
       MGVTBL *vtable = 0;
 
-      for (mg = SvMAGIC(ref); mg; mg = mg->mg_moremagic) 
-      {
+      for (mg = SvMAGIC(ref); mg; mg = mg->mg_moremagic) {
         SV *obj = (SV *) NULL;
 	/* we don't want to clone a qr (regexp) object */
 	/* there are probably other types as well ...  */
         TRACEME(("magic type: %c\n", mg->mg_type));
+
         /* Some mg_obj's can be null, don't bother cloning */
-        if ( mg->mg_obj != NULL )
-        {
-          switch (mg->mg_type)
-          {
+        if ( mg->mg_obj != NULL ) {
+          switch (mg->mg_type) {
+
             case 'r':	/* PERL_MAGIC_qr  */
               obj = mg->mg_obj; 
               break;
+
             case 't':	/* PERL_MAGIC_taint */
-	      continue;
-              break;
             case '<':	/* PERL_MAGIC_backref */
 	      continue;
               break;
+
             default:
               obj = sv_clone(mg->mg_obj, -1); 
           }
@@ -412,26 +417,27 @@ sv_clone (SV * ref, int depth)
         mg->mg_virtual = (MGVTBL *) NULL;
     }
     /* 2: HASH/ARRAY  - (with 'internal' elements) */
-  if ( magic_ref )
-  {
+  if ( magic_ref ) {
     ;;
   }
-  else if ( SvTYPE(ref) == SVt_PVHV )
+  else if ( SvTYPE(ref) == SVt_PVHV ) {
     clone = hv_clone (ref, clone, depth);
-  else if ( SvTYPE(ref) == SVt_PVAV )
+  }
+  else if ( SvTYPE(ref) == SVt_PVAV ) {
     clone = av_clone (ref, clone, depth);
-  else if ( SvTYPE(ref) == SVt_PVCV )
+  }
+  else if ( SvTYPE(ref) == SVt_PVCV ) {
     pad_clone (ref, clone, depth);
-    /* 3: REFERENCE (inlined for speed) */
-  else if (SvROK (ref))
-    {
+  }
+  /* 3: REFERENCE (inlined for speed) */
+  else if (SvROK (ref)) {
       SvROK_on(clone);  /* only set if ROK is set if ref */
       SvRV(clone) = sv_clone (SvRV(ref), depth); /* Clone the referent */
-      if (sv_isobject (ref))
-      {
+
+      if (sv_isobject (ref)) {
           sv_bless (clone, SvSTASH (SvRV (ref)));
       }
-    }
+  }
 
   TRACE_SV("clone", "SV", clone);
   return clone;
