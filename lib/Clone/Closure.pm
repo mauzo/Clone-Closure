@@ -67,6 +67,8 @@ below.
 
 =head1 BUGS
 
+=head2 Loops
+
 Loops are currently not correctly recognized as 'scopes that may run
 more than once'. That is, given
 
@@ -94,6 +96,16 @@ with its own lexical; for example
     }
 
 A clone of $subs[0] will now have its own copy of $i.
+
+=head2 5.6 and C<eval I<STRING>>
+
+Under 5.6, lexicals which are closed over by C<eval I<STRING>> will
+always be cloned, never shared. That is, given
+
+    my $x;
+    my $sub = eval 'sub { $x }';
+
+a clone of $sub will have its own copy of $x, which is incorrect.
 
 =head1 AUTHOR
 

@@ -33,7 +33,10 @@ my $efc = eval q{ sub { \$ef } };
 my $efd = clone $efc;
 
 BEGIN { $tests += 1 }
-is rv $efc, rv $efd, 'lexical from file scope in eval-string is copied';
+TODO: {
+    $] >= 5.008 or local $TODO = q/evals don't work under 5.6/;
+    is rv $efc, rv $efd, 'lexical from file scope in eval-string is copied';
+}
 
 my $eef = {};
 my $eefc = eval q{ my $x = {}; sub { \$x } };

@@ -4,6 +4,15 @@
 
 #include "ppport.h"
 
+#ifndef SvPVX_const
+#define SvPVX_const(sv) ((const char *) (0 + SvPVX(sv)))
+#endif
+
+/* OK, so this is wrong, but it's what 5.6 did. */
+#ifndef U_32
+#define U_32(nv) ( (U32) I_32(nv) )
+#endif
+
 #ifdef DEBUG_CLONE
 #define TRACEME(a) warn a;
 #else
@@ -204,7 +213,11 @@ pad_findscope(CV *scope, const char *name)
     SvFAKE(cv) ? " FAKE" : "", \
     CvUNIQUE(cv) ? " UNIQUE" : ""))
 
+#ifdef CvOUTSIDE_SEQ
 #define MOVE_OUT(scp, sq) sq = CvOUTSIDE_SEQ(scp), scp = CvOUTSIDE(scp)
+#else
+#define MOVE_OUT(scp, sq) scp = CvOUTSIDE(scp)
+#endif
 
     SUB(scope);
 
@@ -241,10 +254,13 @@ pad_findscope(CV *scope, const char *name)
                 continue;
             }
         
+#ifdef CvOUTSIDE_SEQ
             if (
                 seq > U_32(SvNVX(sv))
                 && seq <= (U32)SvIVX(sv)
-            ) {
+            )
+#endif
+            {
                 return scope;
             }
         }
