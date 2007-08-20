@@ -13,6 +13,12 @@
 #define U_32(nv) ( (U32) I_32(nv) )
 #endif
 
+/* blead (5.9) stores these somewhere else, with access macros */
+#ifndef COP_SEQ_RANGE_LOW
+#define COP_SEQ_RANGE_LOW(sv)  (U_32(SvNVX(sv)))
+#define COP_SEQ_RANGE_HIGH(sv) ((U32) SvIVX(sv))
+#endif
+
 #ifdef DEBUG_CLONE
 #define TRACEME(a) warn a;
 #else
@@ -193,7 +199,8 @@ pad_clone (SV *ref, SV * target, int depth)
         (AvARRAY(padv))[i] = new_sv;
         /*av_store(padv, i, SvREFCNT_inc(new_sv));*/
 
-        SvREFCNT_dec(old_sv);
+        if ( SvREFCNT(old_sv) > 1 )
+            SvREFCNT_dec(old_sv);
         TRACE_SV("drop", name, old_sv);
     }
 }
@@ -256,8 +263,8 @@ pad_findscope(CV *scope, const char *name)
         
 #ifdef CvOUTSIDE_SEQ
             if (
-                seq > U_32(SvNVX(sv))
-                && seq <= (U32)SvIVX(sv)
+                seq > COP_SEQ_RANGE_LOW(sv)
+                && seq <= COP_SEQ_RANGE_HIGH(sv)
             )
 #endif
             {
