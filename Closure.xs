@@ -4,6 +4,8 @@
 
 #include "ppport.h"
 
+/* stuff that should probably be in ppport.h, but isn't */
+
 #ifndef SvPVX_const
 #define SvPVX_const(sv) ((const char *) (0 + SvPVX(sv)))
 #endif
@@ -17,6 +19,34 @@
 #ifndef COP_SEQ_RANGE_LOW
 #define COP_SEQ_RANGE_LOW(sv)  (U_32(SvNVX(sv)))
 #define COP_SEQ_RANGE_HIGH(sv) ((U32) SvIVX(sv))
+#endif
+
+#ifndef CvISXSUB
+#define CvISXSUB(cv) CvXSUB(cv)
+#endif
+
+#ifndef CVf_WEAKOUTSIDE
+#define CVf_WEAKOUTSIDE 0
+#endif
+
+#ifndef CvCONST
+#define CvCONST(cv) (0)
+#endif
+
+#ifndef AvREIFY_only
+#define AvREIFY_only(av) (AvFLAGS(av) = AVf_REIFY)
+#endif
+
+#ifndef newSV_type
+static SV *
+newSV_type(svtype type)
+{
+    SV *sv;
+
+    sv = newSV(0);
+    sv_upgrade(sv, type);
+    return sv;
+}
 #endif
 
 #ifdef DEBUG_CLONE
@@ -48,8 +78,9 @@ static SV *hv_clone (SV *, SV *, int);
 static SV *av_clone (SV *, SV *, int);
 static SV *sv_clone (SV *, int);
 static SV *rv_clone (SV *, int);
+static SV *CC_cv_clone (CV *);
 static void pad_clone (SV *, SV *, int);
-static CV *pad_findscope(CV *, const char *);
+static CV *pad_findscope(CV *, SV *);
 
 static HV *HSEEN;
 
@@ -128,6 +159,97 @@ rv_clone (SV * ref, int depth)
   return clone;
 }
 
+/* largely taken from pad.c:cv_clone (in op.c in 5.6) */
+static SV *
+CC_cv_clone(CV *ref)
+{
+    AV *const rpadlist = CvPADLIST(ref);
+    AV *const rname    = (AV *)*av_fetch(rpadlist, 0, FALSE);
+    U32       rdepth   = CvDEPTH(ref);
+    AV *const rpad     = (AV *)*av_fetch(rpadlist, rdepth, FALSE);
+    const I32 fname    = AvFILLp(rname);
+    const I32 fpad     = AvFILLp(rpad);
+    SV **     prname   = AvARRAY(rname);
+    AV *      cpadlist;
+    AV *      cname;
+    AV *      cpad;
+    AV *      a0;
+    CV       *clone, *outside;
+    I32       ix;
+
+    TRACE_SV("ref", "CV", ref);
+
+    /* CvCONST is only set on a clone if the sub is actually constant */
+    if (!CvCLONED(ref) || CvCONST(ref)) {
+        /* we shouldn't be cloning a closure prototype */
+        assert(!CvCLONE(ref));
+
+        SvREFCNT_inc(ref);
+        TRACE_SV("copy", "CV", ref);
+        return (SV *)ref;
+    }
+
+    assert(!CvUNIQUE(ref));
+
+    outside = CvOUTSIDE(ref);
+    /* we should be cloning an instantiated closure, so CvOUTSIDE
+     * shouldn't be a closure prototype */
+    assert(!(outside && CvCLONE(outside) && !CvCLONED(outside)));
+    assert(CvPADLIST(outside));
+
+    clone = (CV *)newSV_type(SvTYPE(ref));
+    CvFLAGS(clone) = CvFLAGS(ref) & ~(CVf_CLONE|CVf_WEAKOUTSIDE);
+    CvCLONED_on(clone);
+
+#ifdef USE_ITHREADS
+    CvFILE(clone)           = CvISXSUB(ref) ? CvFILE(ref)
+                                            : savepv(CvFILE(ref));
+#else
+    CvFILE(clone)           = CvFILE(ref);
+#endif
+    CvGV(clone)             = CvGV(ref);
+    CvSTASH(clone)          = CvSTASH(ref);
+    OP_REFCNT_LOCK;
+    CvROOT(clone)           = OpREFCNT_inc(CvROOT(ref));
+    OP_REFCNT_UNLOCK;
+    CvSTART(clone)          = CvSTART(ref);
+    CvOUTSIDE(clone)        = (CV *)SvREFCNT_inc(outside);
+#ifdef CvOUTSIDE_SEQ
+    CvOUTSIDE_SEQ(clone)    = CvOUTSIDE_SEQ(ref);
+#endif
+
+    if (SvPOK(ref))
+        sv_setpvn((SV *)clone, SvPVX_const(ref), SvCUR(ref));
+
+    /* create a new padlist, and initial pad */
+    cpadlist    = newAV();
+    cname       = newAV();
+    cpad        = newAV();
+
+    /* create @_ */
+    a0 = newAV();
+    av_extend(a0, 0);
+    av_store(cpad, 0, (SV *)a0);
+    AvREIFY_only(a0);
+
+    AvREAL_off(cpadlist);
+    av_store(cpadlist, 0, (SV *)cname);
+    av_store(cpadlist, 1, (SV *)cpad);
+
+    /* fill in the names of the lexicals */
+    av_fill(cpad, fpad);
+    for (ix = fname; ix >= 0; ix--)
+        av_store(cname, ix, SvREFCNT_inc(prname[ix]));
+
+    CvPADLIST(clone) = cpadlist;
+
+    /* the pad is filled in later, by pad_clone */
+
+    TRACE_SV("clone", "CV", clone);
+
+    return (SV *)clone;
+}
+
 /* mostly stolen from PadWalker */
 
 static void
@@ -142,6 +264,8 @@ pad_clone (SV *ref, SV * target, int depth)
     AV *padr   = (AV *) *av_fetch(CvPADLIST(rcv), rdepth, FALSE);
     I32 i;
     int recur = depth ? depth - 1 : 0;
+
+    TRACE_SV("ref", "pad", ref);
 
     for (i = av_len(padn); i >= 0; --i) {
         SV  **name_p, *name_sv, **val_p, *val_sv;
@@ -166,7 +290,7 @@ pad_clone (SV *ref, SV * target, int depth)
         TRACE_SV("ref", name, val_sv);
 
         /* start with the scope that declared the lexical... */
-        lexscope = SvFAKE(name_sv) ? pad_findscope(cv, name) : cv;
+        lexscope = SvFAKE(name_sv) ? pad_findscope(cv, name_sv) : cv;
 
         /* ...and see if there are any outside which aren't UNIQUE */
         while ( lexscope && CvUNIQUE(lexscope) ) {
@@ -203,16 +327,19 @@ pad_clone (SV *ref, SV * target, int depth)
             SvREFCNT_dec(old_sv);
         TRACE_SV("drop", name, old_sv);
     }
+
+    TRACE_SV("clone", "pad", target);
 }
 
 /* locate the scope in which a lexical was declared */
 /* mostly stolen from pad.c:pad_findlex */
 
 static CV *
-pad_findscope(CV *scope, const char *name)
+pad_findscope(CV *scope, SV *name_sv)
 {
-    U32  seq;
-    CV  *last_fake = scope;
+    const char  *name = SvPVX_const(name_sv);
+    U32          seq;
+    CV          *last_fake = scope;
 
     TRACEME(("searching for %s\n", name));
 
@@ -223,6 +350,7 @@ pad_findscope(CV *scope, const char *name)
 #ifdef CvOUTSIDE_SEQ
 #define MOVE_OUT(scp, sq) sq = CvOUTSIDE_SEQ(scp), scp = CvOUTSIDE(scp)
 #else
+    seq = SvIVX(name_sv);
 #define MOVE_OUT(scp, sq) scp = CvOUTSIDE(scp)
 #endif
 
@@ -261,14 +389,17 @@ pad_findscope(CV *scope, const char *name)
                 continue;
             }
         
-#ifdef CvOUTSIDE_SEQ
             if (
                 seq > COP_SEQ_RANGE_LOW(sv)
                 && seq <= COP_SEQ_RANGE_HIGH(sv)
             )
-#endif
             {
                 return scope;
+            }
+            else {
+                TRACEME(("found %s but %x not in [%x, %x]\n",
+                    name, seq, COP_SEQ_RANGE_LOW(sv),
+                    COP_SEQ_RANGE_HIGH(sv)));
             }
         }
     }
@@ -354,7 +485,7 @@ sv_clone (SV * ref, int depth)
 
       case SVt_PVCV:	/* 12 */
         TRACEME(("  CV\n"));
-        clone = (SV *) Perl_cv_clone (aTHX_ (CV *) ref);
+        clone = (SV *) CC_cv_clone ((CV *) ref);
         break;
 
       #if PERL_VERSION <= 8

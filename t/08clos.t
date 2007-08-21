@@ -34,7 +34,7 @@ my $efd = clone $efc;
 
 BEGIN { $tests += 1 }
 TODO: {
-    $] >= 5.008 or local $TODO = q/evals don't work under 5.6/;
+    $] >= 5.008 or local $TODO = q/lexicals in evals don't work under 5.6/;
     is rv $efc, rv $efd, 'lexical from file scope in eval-string is copied';
 }
 
@@ -111,7 +111,10 @@ my $ec = ec;
 my $ed = clone $ec;
 
 BEGIN { $tests += 1 }
-isnt rv $ec, rv $ed, 'lexical from sub in eval-string is cloned';
+TODO: {
+    $] >= 5.008 or local $TODO = q/lexicals in evals don't work under 5.6/;
+    isnt rv $ec, rv $ed, 'lexical from sub in eval-string is cloned';
+}
 
 sub eec {
     return eval q{ my $eec; sub { \$eec } };
