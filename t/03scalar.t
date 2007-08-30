@@ -1,84 +1,70 @@
-# $Id: 03scalar.t,v 0.19 2006-10-08 03:37:29 ray Exp $
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
+#!/usr/bin/perl
 
-######################### We start with some black magic to print on failure.
+use warnings;
+use strict;
 
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..10\n"; }
-END {print "not ok 1\n" unless $loaded;}
-use Clone::Closure qw( clone );
+use Test::More;
 use Data::Dumper;
-$loaded = 1;
-print "ok 1\n";
+use Clone::Closure qw/clone/;
 
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
+my $tests;
 
 package Test::Scalar;
 
-use vars @ISA;
+our @ISA = qw(Clone::Closure);
 
-@ISA = qw(Clone::Closure);
-
-sub new
-  {
+sub new {
     my $class = shift;
     my $self = shift;
     bless \$self, $class;
-  }
-
-sub DESTROY 
-  {
-    my $self = shift;
-    # warn "DESTROYING $self";
-  }
+}
 
 package main;
                                                 
-sub ok     { print "ok $test\n"; $test++ }
-sub not_ok { print "not ok $test\n"; $test++ }
+my $x = Test::Scalar->new(1.0);
+my $y = $x->clone;
 
-$^W = 0;
-$test = 2;
-
-my $a = Test::Scalar->new(1.0);
-my $b = $a->clone;
-
-$$a == $$b ? ok : not_ok;
-$a != $b ? ok : not_ok;
+BEGIN { $tests += 2 }
+cmp_ok  $$x, '==',  $$y,    'NVs clone';
+isnt    $x,         $y,     '...not copy';
 
 my $c = \"test 2 scalar";
-my $d = Clone::Closure::clone($c);
+my $d = clone $c;
 
-$$c == $$d ? ok : not_ok;
-$c != $d ? ok : not_ok;
+BEGIN { $tests += 2 }
+is      $$c,    $$d,            'refs clone';
+isnt    $c,     $d,             '...not copy';
 
 my $circ = undef;
 $circ = \$circ;
-$aref = clone($circ);
-Dumper($circ) eq Dumper($aref) ? ok : not_ok;
+my $aref = clone $circ;
+
+BEGIN { $tests += 1 }
+is  Dumper($circ), Dumper($aref), 'circular refs clone';
 
 # the following used to produce a segfault, rt.cpan.org id=2264
-undef $a;
-$b = clone($a);
-$$a == $$b ? ok : not_ok;
+undef $x;
+$y = clone $x;
+
+BEGIN { $tests += 1 }
+ok  !defined($y),               'undef clones';
 
 # used to get a segfault cloning a ref to a qr data type.
 my $str = 'abcdefg';
 my $qr = qr/$str/;
-my $qc = clone( $qr );
-$qr eq $qc ? ok : not_ok;
-$str =~ /$qc/ ? ok : not_ok;
+my $qc = clone $qr;
+
+BEGIN { $tests += 2 }
+is      $qr,    $qc,            'qr clones';
+like    $str,   $qc,            'cloned qr matches'; 
 
 # test for unicode support
 {
-  my $a = \( chr(256) );
-  my $b = clone( $a );
-  ord($$a) == ord($$b) ? ok : not_ok;
+    my $a = \( chr(256) );
+    my $b = clone $a;
+
+    BEGIN { $tests += 1 }
+    is ord($$a), ord($$b),      'ref to unicode clones';
 }
+
+BEGIN { plan tests => $tests }

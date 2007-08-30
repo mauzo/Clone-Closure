@@ -1,55 +1,57 @@
-# $Id: 07magic.t,v 1.8 2007-04-20 05:40:48 ray Exp $
+#!/usr/bin/perl
 
 use strict;
+use warnings;
 
-use Clone::Closure;
-use Test::More tests => 3;
+use Test::More;
+use Data::Dumper;
+use Clone::Closure qw/clone/;
 
+my $tests;
+
+BEGIN { $tests += 1 }
 SKIP: {
-  eval "use Data::Dumper";
-  skip "Data::Dumper not installed", 1 if $@;
-
-  SKIP: {
-    eval "use Scalar::Util qw( weaken )";
+    eval "use Scalar::Util qw( weaken ); 1";
     skip "Scalar::Util not installed", 1 if $@;
-  
+
     my $x = { a => "worked\n" }; 
     my $y = $x;
     weaken($y);
-    my $z = Clone::Closure::clone($x);
-    ok( Dumper($x) eq Dumper($z), "Clone::Closured weak reference");
-  }
+    my $z = clone $x;
+    is Dumper($x), Dumper($z), 'cloned weak reference';
+}
 
-  ## RT 21859: Clone::Closure segfault (isolated example)
-  SKIP: {
+## RT 21859: Clone::Closure segfault (isolated example)
+BEGIN { $tests += 1 }
+SKIP: {
     my $string = "HDDR-WD-250JS";
     eval {
       use utf8;
       utf8::upgrade($string);
     };
     skip $@, 1 if $@;
-    $string = sprintf ('<<bg_color=%s>>%s<</bg_color>>%s',
+
+    $string = sprintf '<<bg_color=%s>>%s<</bg_color>>%s',
           '#EA0',
-          substr ($string, 0, 4),
-          substr ($string, 4),
-        );
-    my $z = Clone::Closure::clone($string);
-    ok( Dumper($string) eq Dumper($z), "Clone::Closured magic utf8");
-  }
+          substr($string, 0, 4),
+          substr($string, 4);
+    my $z = clone $string;
+    is Dumper($string), Dumper($z), 'cloned magic utf8';
 }
 
+BEGIN { $tests += 1 }
 SKIP: {
-  eval "use Taint::Runtime qw(enable taint_env)";
-  skip "Taint::Runtime not installed", 1 if $@;
-  taint_env();
-  my $x = "";
-  for (keys %ENV)
-  {
-    $x = $ENV{$_};
-    last if ( $x && length($x) > 0 );
-  }
-  my $y = Clone::Closure::clone($x);
-  ## ok(Clone::Closure::clone($tainted), "Tainted input");
-  ok( Dumper($x) eq Dumper($y), "Tainted input");
+    eval "use Taint::Runtime qw(enable taint_env)";
+    skip "Taint::Runtime not installed", 1 if $@;
+
+    taint_env();
+    my $x = "";
+    for (keys %ENV) {
+        $x = $ENV{$_};
+        last if ( $x && length($x) > 0 );
+    }
+    my $y = clone $x;
+    is Dumper($x), Dumper($y), 'Tainted input';
 }
 
+BEGIN { plan tests => $tests }

@@ -1,85 +1,69 @@
-# $Id: 06refcnt.t,v 0.18 2006-10-08 03:37:29 ray Exp $
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
-
-######################### We start with some black magic to print on failure.
-
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..9\n"; }
-END {print "not ok 1\n" unless $loaded;}
-use Clone::Closure qw( clone );
-$loaded = 1;
-print "ok 1\n";
-
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
-
-# code to test for memory leaks
-
-use Benchmark;
-use Data::Dumper;
-# use Storable qw( dclone );
-
-$^W = 0;
-$test = 2;
-
-sub ok     { printf("ok %d\n", $test++); }
-sub not_ok { printf("not ok %d\n", $test++); }
+#!/usr/bin/perl
 
 use strict;
+use warnings;
+
+use Test::More;
+use Clone::Closure qw/clone/;
+
+my $tests;
+my $gone;
 
 package Test::Hash;
 
-@Test::Hash::ISA = qw( Clone::Closure );
+our @ISA = qw( Clone::Closure );
 
-sub new()
-{
-  my ($class) = @_;
-  my $self = {};
-  bless $self, $class;
+sub new {
+    my ($class) = @_;
+    my $self = {};
+    bless $self, $class;
 }
 
-my $ok = 0;
-END { $ok = 1; };
-sub DESTROY
-{
-  my $self = shift;
-  printf("not ") if $ok;
-  printf("ok %d\n", $::test++);
+sub DESTROY {
+    $gone++;
 }
 
 package main;
 
+BEGIN { $tests += 1 }
+$gone = 0;
 {
-  my $a = Test::Hash->new();
-  my $b = $a->clone;
-  # my $c = dclone($a);
+    my $x = Test::Hash->new();
+    my $y = $x->clone;
 }
+is  $gone,  2,          'both clone and orig are destroyed';
 
 # benchmarking bug
+BEGIN { $tests += 2 }
+$gone = 0;
 {
-  my $a = Test::Hash->new();
-  my $sref = sub { my $b = clone($a) };
-  $sref->();
+    my $x = Test::Hash->new();
+    my $sref = sub { my $y = clone $x };
+    $sref->();
+    is $gone, 1,        'clone is destroyed, orig remains';
 }
+is $gone,   2,          'both are destroyed';
 
 # test for cloning unblessed ref
+BEGIN { $tests += 1 }
+$gone = 0;
 {
-  my $a = {};
-  my $b = clone($a);
-  bless $a, 'Test::Hash';
-  bless $b, 'Test::Hash';
+    my $x = {};
+    my $y = clone $x;
+    bless $x, 'Test::Hash';
+    bless $y, 'Test::Hash';
 }
+is $gone,   2,          'unblessed {} has correct refcnt';
 
 # test for cloning unblessed ref
+BEGIN { $tests += 1 }
+$gone = 0;
 {
-  my $a = [];
-  my $b = clone($a);
-  bless $a, 'Test::Hash';
-  bless $b, 'Test::Hash';
+    my $x = [];
+    my $y = clone $x;
+    bless $x, 'Test::Hash';
+    bless $y, 'Test::Hash';
 }
+is $gone,   2,          'unblessed [] has correct refcnt';
+
+BEGIN { plan tests => $tests }

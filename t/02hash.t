@@ -1,53 +1,27 @@
-# $Id: 02hash.t,v 0.19 2006-10-08 03:37:29 ray Exp $
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
+#!/usr/bin/perl
 
-######################### We start with some black magic to print on failure.
+use warnings;
+use strict;
 
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..9\n"; }
-END {print "not ok 1\n" unless $loaded;}
-use Clone::Closure qw( clone );
+use Test::More;
 use Data::Dumper;
-$loaded = 1;
-print "ok 1\n";
+use Clone::Closure qw/clone/;
 
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
+my $tests;
 
 package Test::Hash;
 
-use vars @ISA;
+our @ISA = qw(Clone::Closure);
 
-@ISA = qw(Clone::Closure);
-
-sub new
-  {
+sub new {
     my $class = shift;
     my %self = @_;
     bless \%self, $class;
-  }
-
-sub DESTROY 
-  {
-    my $self = shift;
-    # warn "DESTROYING $self";
-  }
+}
 
 package main;
                                                 
-sub ok     { print "ok $test\n"; $test++ }
-sub not_ok { print "not ok $test\n"; $test++ }
-
-$^W = 0;
-$test = 2;
-
-my $a = Test::Hash->new(
+my $x = Test::Hash->new(
     level => 1,
     href  => {
       level => 2,
@@ -60,29 +34,32 @@ my $a = Test::Hash->new(
     },
   );
 
-$a->{a} = $a;
+$x->{a} = $x;
+my $y = $x->clone;
 
-my $b = $a->clone;
-
-$a->{level} == $b->{level} ? ok : not_ok;
-
-$b->{href} != $a->{href} ? ok : not_ok;
-
-$b->{href}{href} != $a->{href}{href} ? ok : not_ok;
-
-$b->{href}{href}{level} == 3 ? ok : not_ok;
-$b->{href}{href}{href}{level} == 4 ? ok : not_ok;
-
-$b->{href}{href}{href} != $a->{href}{href}{href} ? ok : not_ok;
+BEGIN { $tests += 5 }
+is   $x->{level},   $y->{level},    'blessed hashes are cloned';
+isnt $y->{href},    $x->{href},     'hashrefs are cloned, not copied';
+isnt $y->{href}{href},
+     $x->{href}{href},              '...at every level';
+is   $y->{href}{href}{level}, 3,    'recursive hrefs are cloned';
+isnt $y->{href}{href}{href},
+     $x->{href}{href}{href},        '...not copied';
 
 my %circ = ();
 $circ{c} = \%circ;
 my $cref = clone(\%circ);
-Dumper(\%circ) eq Dumper($cref) ? ok : not_ok;
+
+BEGIN { $tests += 1 }
+is Dumper(\%circ), Dumper($cref),   'circular hrefs are cloned';
 
 # test for unicode support
 {
-  my $a = { chr(256) => 1 };
-  my $b = clone( $a );
-  ord( (keys(%$a))[0] ) == ord( (keys(%$b))[0] ) ? ok : not_ok;
+    my $x = { chr(256) => 1 };
+    my $y = clone( $x );
+
+    BEGIN { $tests += 1 }
+    is ord( (keys(%$x))[0] ), ord( (keys(%$y))[0] ), 'unicode hash keys';
 }
+
+BEGIN { plan tests => $tests }

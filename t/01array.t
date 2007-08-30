@@ -1,46 +1,27 @@
-# $Id: 01array.t,v 0.19 2006-10-08 03:37:29 ray Exp $
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
+#!/usr/bin/perl
 
-######################### We start with some black magic to print on failure.
+use warnings;
+use strict;
 
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
-
-BEGIN { $| = 1; print "1..5\n"; }
-END {print "not ok 1\n" unless $loaded;}
-use Clone::Closure qw( clone );
+use Test::More;
+use Clone::Closure qw/clone/;
 use Data::Dumper;
-$loaded = 1;
-print "ok 1\n";
 
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
+my $tests;
 
 package Test::Array;
 
-use vars @ISA;
+our @ISA = qw(Clone::Closure);
 
-@ISA = qw(Clone::Closure);
-
-sub new
-  {
+sub new {
     my $class = shift;
     my @self = @_;
     bless \@self, $class;
-  }
+}
 
 package main;
                                                 
-sub ok     { print "ok $test\n"; $test++ }
-sub not_ok { print "not ok $test\n"; $test++ }
-
-$^W = 0;
-$test = 2;
-my $a = Test::Array->new(
+my $x = Test::Array->new(
     1, 
     [ 'two', 
       [ 3,
@@ -48,22 +29,25 @@ my $a = Test::Array->new(
       ],
     ],
   );
-my $b = $a->clone;
+my $y = $x->clone;
 
-# TEST 2
-$b->[1][0] eq 'two' ? ok : not_ok;
+BEGIN { $tests += 2 }
+is $y->[1][0],  'two',      'deep structure is copied';
+isnt $y->[1],   $x->[1],    'refs are cloned, not copied';
 
-# TEST 3 
-$b->[1] != $a->[1] ? ok : not_ok;
-
-my @circ = ();
+my @circ;
 $circ[0] = \@circ;
-$aref = clone(\@circ);
-Dumper(\@circ) eq Dumper($aref) ? ok : not_ok;
+my $aref = clone \@circ;
+
+BEGIN { $tests += 1 }
+is Dumper(\@circ), Dumper($aref), 'circular refs are cloned';
 
 # test for unicode support
 {
-  my $a = [ chr(256) => 1 ];
-  my $b = clone( $a );
-  ord( $a->[0] ) == ord( $b->[0] ) ? ok : not_ok;
+    my $a = [ chr(256) => 1 ];
+    my $b = clone( $a );
+    BEGIN { $tests += 1 }
+    is ord( $a->[0] ), ord( $b->[0] ), 'unicode is cloned';
 }
+
+BEGIN { plan tests => $tests }
