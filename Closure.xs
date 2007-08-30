@@ -559,15 +559,19 @@ MODULE = Clone::Closure		PACKAGE = Clone::Closure
 PROTOTYPES: ENABLE
 
 void
-_clone(ref)
+clone(ref)
 	SV *ref
     PREINIT:
 	SV *clone;
         HV *SEEN;
     PPCODE:
+        SEEN = newHV();
+
         TRACE_SV("ref", "_clone", ref);
-        SEEN = get_hv("Clone::Closure::SEEN", 0);
 	clone = sv_clone(SEEN, ref);
         TRACE_SV("clone", "_clone", clone);
+
+        SvREFCNT_dec(SEEN);
+
 	EXTEND(SP,1);
 	PUSHs(sv_2mortal(clone));
