@@ -12,6 +12,13 @@ use XSLoader;
 our $VERSION = '0.01';
 XSLoader::load __PACKAGE__, $VERSION;
 
+our %SEEN;
+
+sub clone {
+    local %SEEN;
+    return _clone(@_);
+}
+
 1;
 __END__
 

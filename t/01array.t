@@ -7,7 +7,7 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..7\n"; }
+BEGIN { $| = 1; print "1..5\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use Clone::Closure qw( clone );
 use Data::Dumper;
@@ -48,20 +48,13 @@ my $a = Test::Array->new(
       ],
     ],
   );
-my $b = $a->clone(0);
-my $c = $a->clone(2);
+my $b = $a->clone;
 
 # TEST 2
 $b->[1][0] eq 'two' ? ok : not_ok;
 
-# TEST 3
-$b->[1] == $a->[1] ? ok : not_ok;
-
-# TEST 4
-$c->[1] != $a->[1] ? ok : not_ok;
-
-# TEST 5
-$c->[1][1][1] == $a->[1][1][1] ? ok : not_ok;
+# TEST 3 
+$b->[1] != $a->[1] ? ok : not_ok;
 
 my @circ = ();
 $circ[0] = \@circ;

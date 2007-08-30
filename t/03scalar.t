@@ -48,13 +48,13 @@ $^W = 0;
 $test = 2;
 
 my $a = Test::Scalar->new(1.0);
-my $b = $a->clone(1);
+my $b = $a->clone;
 
 $$a == $$b ? ok : not_ok;
 $a != $b ? ok : not_ok;
 
 my $c = \"test 2 scalar";
-my $d = Clone::Closure::clone($c, 2);
+my $d = Clone::Closure::clone($c);
 
 $$c == $$d ? ok : not_ok;
 $c != $d ? ok : not_ok;

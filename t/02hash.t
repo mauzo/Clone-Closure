@@ -7,7 +7,7 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..12\n"; }
+BEGIN { $| = 1; print "1..9\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use Clone::Closure qw( clone );
 use Data::Dumper;
@@ -62,22 +62,18 @@ my $a = Test::Hash->new(
 
 $a->{a} = $a;
 
-my $b = $a->clone(0);
-my $c = $a->clone(3);
+my $b = $a->clone;
 
 $a->{level} == $b->{level} ? ok : not_ok;
 
-$b->{href} == $a->{href} ? ok : not_ok;
-$c->{href} != $a->{href} ? ok : not_ok;
+$b->{href} != $a->{href} ? ok : not_ok;
 
-$b->{href}{href} == $a->{href}{href} ? ok : not_ok;
-$c->{href}{href} != $a->{href}{href} ? ok : not_ok;
+$b->{href}{href} != $a->{href}{href} ? ok : not_ok;
 
-$c->{href}{href}{level} == 3 ? ok : not_ok;
-$c->{href}{href}{href}{level} == 4 ? ok : not_ok;
+$b->{href}{href}{level} == 3 ? ok : not_ok;
+$b->{href}{href}{href}{level} == 4 ? ok : not_ok;
 
-$b->{href}{href}{href} == $a->{href}{href}{href} ? ok : not_ok;
-$c->{href}{href}{href} == $a->{href}{href}{href} ? ok : not_ok;
+$b->{href}{href}{href} != $a->{href}{href}{href} ? ok : not_ok;
 
 my %circ = ();
 $circ{c} = \%circ;
