@@ -33,6 +33,10 @@
 #define AvREIFY_only(av) (AvFLAGS(av) = AVf_REIFY)
 #endif
 
+#ifndef SvWEAKREF
+#define SvWEAKREF(sv) (0)
+#endif
+
 #ifndef newSV_type
 static SV *
 newSV_type(svtype type)
@@ -547,6 +551,10 @@ sv_clone(HV *SEEN, SV *ref)
 
         if (sv_isobject(ref)) {
             sv_bless(clone, SvSTASH(SvRV(ref)));
+        }
+
+        if (SvWEAKREF(ref)) {
+            sv_rvweaken(clone);
         }
     }
 
