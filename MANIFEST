@@ -1,6 +1,5 @@
 Changes
 Closure.xs
-cop
 inc/Module/AutoInstall.pm
 inc/Module/Install.pm
 inc/Module/Install/AutoInstall.pm
