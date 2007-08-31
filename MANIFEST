@@ -17,7 +17,9 @@ Makefile.PL
 MANIFEST
 META.yml			Module meta-data (added by MakeMaker)
 ppport.h
+t/00use.t
 t/01array.t
+t/01sv.t
 t/02hash.t
 t/03scalar.t
 t/04tie.t
