@@ -18,15 +18,15 @@ MANIFEST
 META.yml			Module meta-data (added by MakeMaker)
 ppport.h
 t/00use.t
-t/01array.t
 t/01sv.t
-t/02hash.t
+t/02rv.t
+t/03av.t
 t/03scalar.t
+t/04hv.t
 t/04tie.t
-t/05dtype.t
+t/05cv.t
 t/06refcnt.t
 t/07magic.t
-t/08clos.t
 t/dclone.t
 t/dump.pl
 t/tied.pl

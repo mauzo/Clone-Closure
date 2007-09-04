@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use Test::Builder;
 use Clone::Closure  qw/clone/;
 use Scalar::Util    qw/blessed dualvar/;
 use B               qw/SVf_IVisUV/;
@@ -47,6 +48,11 @@ my $pv = clone 'hello world';
 
 isa_ok  b(\$pv),    'B::PV',        'PV cloned';
 is      $pv,        'hello world',  '...correctly';
+
+
+BAIL_OUT('basic values won\'t clone correctly')
+    if grep !$_, Test::Builder->new->summary;
+
 
 SKIP: {
     my $skip;
