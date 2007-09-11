@@ -21,8 +21,8 @@
 #define CvISXSUB(cv) CvXSUB(cv)
 #endif
 
-#ifndef CVf_WEAKOUTSIDE
-#define CVf_WEAKOUTSIDE 0
+#ifndef CvWEAKOUTSIDE
+#define CvWEAKOUTSIDE(cv) (0)
 #endif
 
 #ifndef CvCONST
@@ -63,8 +63,14 @@ newSV_type(svtype type)
 #define TRACEME(a)
 #endif
 
-#define TRACE_SV(action, name, sv) \
-    TRACEME(("%s (%s) = 0x%x(%d)\n", action, name, sv, SvREFCNT(sv)))
+#define TRACE_SV(action, name, sv)                              \
+    TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s\n", action, name, sv,    \
+        SvREFCNT(sv), SvFLAGS(sv),                              \
+        (SvPADMY(sv)   ? " PADMY"   : ""),                      \
+        (SvPADTMP(sv)  ? " PADTMP"  : ""),                      \
+        (SvTEMP(sv)    ? " TEMP"    : ""),                      \
+        (SvFAKE(sv)    ? " FAKE"    : "")                       \
+    ))
 
 #define TRACE_SCOPE(cv) TRACEME(("scope 0x%x:%s\n", cv, \
     (cv && CvUNIQUE(cv)) ? " UNIQUE" : ""))
@@ -254,29 +260,50 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
         const char *name;
         bool  can_copy;
 
-        name_p = av_fetch(padn, i, 0);
-
-        if (!name_p || !SvPOKp(*name_p))
-            continue;
-
-        name_sv = *name_p;
-        name    = SvPVX_const(name_sv);
-
-        TRACE_SV("ref", name, val_sv);
-
-        /* 'our' entries have everything in the name, and need no pad
-         * entry */
-        if (SvFLAGS(name_sv) & SVpad_OUR) {
-            TRACE_SV("skip", name, val_sv);
-            continue;
-        }
+        name_p  = av_fetch(padn, i, 0);
+        name_sv = name_p ? *name_p : &PL_sv_undef;
+        name    = (name_p && SvPOKp(name_sv))
+                        ? SvPVX_const(name_sv)
+                        : "???";
 
         val_p    = av_fetch(padr, i, 0);
         val_sv   = val_p ? *val_p : &PL_sv_undef;
 
-        if (CvCLONED(clone)) {
+        /* The following types of entries exist in pads... */
 
-            if (SvFAKE(name_sv)) {
+        /* @_ must be cloned */
+        if (i == 0) {
+            name = "@_";
+            can_copy = 0;
+        }
+
+        /* 'our' entries have everything in the name, and need no pad
+         * entry */
+        else if (SvFLAGS(name_sv) & SVpad_OUR) {
+            can_copy = 1;
+        }
+
+        /* PADTMP entries are targs/GVs/constants, and need copying */
+        else if (SvPADTMP(val_sv)) {
+            name = "PADTMP";
+            can_copy = 1;
+        }
+
+        /* entries with names are lexicals */
+        else if (name_sv != &PL_sv_undef) {
+
+            /* non-closures must clone all lexicals */
+            if (!CvCLONED(clone)) {
+                can_copy = 0;
+            }
+
+            /* lexicals declared in this sub must be cloned */
+            else if (!SvFAKE(name_sv)) {
+                can_copy = 0;
+            }
+
+            /* closed-over lexicals need checking */
+            else {
                 CV *scope;
 
                 /* start with the scope that declared the lexical... */
@@ -298,17 +325,17 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
                  * cloned */
                 can_copy = (!scope || CvUNIQUE(scope));
             }
-            else {
-                /* lexicals declared in this sub will be recreated
-                 * anyway, so might as well be copied */
-                can_copy = 1;
-            }
         }
+
+        /* just in case :) */
         else {
-            /* named subs don't close over lexicals, so everything must
-             * be cloned */
-            can_copy = 0;
+            warn("Clone::Closure: unknown pad entry: please report a bug!");
+            TRACE_SV("unknown", "name", name_sv);
+            TRACE_SV("unknown", "val",  val_sv);
+            continue;
         }
+
+        TRACE_SV("ref", name, val_sv);
 
         if (can_copy) {
             new_sv = SvREFCNT_inc(val_sv);
@@ -324,7 +351,8 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
         old_p    = av_fetch(padv, i, 0);
         old_sv   = old_p ? *old_p : &PL_sv_undef;
 
-        /* can't use av_store as the refcounts get wrong */
+        /* can't use av_store as the refcounts get wrong:
+         * pads are AvREAL even though they shouldn't be */
         (AvARRAY(padv))[i] = new_sv;
         /*av_store(padv, i, SvREFCNT_inc(new_sv));*/
 

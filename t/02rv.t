@@ -72,8 +72,12 @@ BAIL_OUT 'refs won\'t clone correctly'
     is      $rv,            *STDOUT{IO},    '...and is a copy';
 }
 
-{
-    BEGIN { $tests += 2 }
+SKIP: {
+    my $skip;
+    skip '*FOO{FORMAT} does not work under 5.6', $skip
+        if $] < 5.008;
+
+    BEGIN { $skip += 2 }
 
 format PVFM =
 foo
@@ -82,6 +86,8 @@ foo
 
     isa_ok  b($rv),         'B::FM',        'PVFM cloned';
     is      $rv,            *PVFM{FORMAT},  '...and is a copy';
+
+    BEGIN { $tests += $skip }
 }
 
 {
@@ -91,8 +97,13 @@ foo
     my $gv   = clone *bar;
 
     isa_ok  b(\$gv),        'B::GV',        'GV cloned';
-    is      b(\$glob)->GP,  b(\*bar)->GP,   'sanity check';
-    is      b(\$gv)->GP,    b(\*bar)->GP,   '...and is the same glob';
+    SKIP: {
+        skip 'can\'t test globs', 2
+            unless eval { b(\*STDOUT)->GP; 1 };
+
+        is      b(\$glob)->GP,  b(\*bar)->GP,   'sanity check';
+        is      b(\$gv)->GP,    b(\*bar)->GP,   '...and is the same glob';
+    }
 
     my $rv = clone \*foo;
 

@@ -12,6 +12,78 @@ BEGIN { *b = \&B::svref_2object }
 my $tests;
 
 {
+    BEGIN { $tests += 6 }
+
+    my $sub = sub { 
+        return $_[0] + 3;
+    };
+    my $cv  = clone $sub;
+
+    isa_ok  b($cv),             'B::CV',            'anon CV cloned';
+    isnt    $cv,                $sub,               '...not copied';
+    is      $cv->(3),           6,                  '...correctly';
+    is      b($cv)->GV->NAME,   '__ANON__',         '...still __ANON__';
+    is      b($cv)->STASH->NAME,    'main',         '...preserving stash';
+}
+
+{
+    BEGIN { $tests += 6 }
+
+    sub named_sub { 
+        $_[0] + 1;
+    }
+    my $cv = clone \&named_sub;
+
+    isa_ok  b($cv),             'B::CV',            'named CV cloned';
+    isnt    $cv,                \&named_sub,        '...not copied';
+    is      $cv->(2),           3,                  '...correctly';
+    is      b($cv)->GV->NAME,   'named_sub',        '...preserving name';
+    is      b($cv)->STASH->NAME, 'main',            '...preserving stash';
+
+    local *typeglob;
+    *typeglob = $cv;
+    undef &named_sub;
+
+    ok      defined &typeglob,       '...and can be undefined separately';
+}
+
+{
+    BEGIN { $tests += 2 }
+
+    our $x;
+    sub named_our {
+        \$x;
+    }
+    my $sub    = sub { \$x };
+
+    my $named  = clone \&named_our;
+    my $anon   = clone $sub;
+
+    is $named->(), \$x, 'our in named CV is copied';
+    is $anon->(),  \$x, 'our in anon CV is copied';
+}
+
+{
+    BEGIN { $tests += 2 }
+
+    my $cv;
+    my $count;
+    my $sub = sub {
+        my $x;
+        $x++; $count++;
+        return wantarray ? (\$x, scalar $cv->()) : \$x;
+    };
+    $cv = clone $sub;
+
+    isnt    scalar $cv->(), scalar $sub->(),    'new lexicals clone';
+
+    $count = 0;
+    my @rv = $sub->();
+    is      $count,         2,                  'sanity check';
+    is      ${$rv[0]},      1,                  '...and don\'t interfere';
+}
+
+{
     BEGIN { $tests += 1 }
 
     my $x;
@@ -126,9 +198,7 @@ TODO: {
     isnt $cv->(), $sub->(), 'lexical from for-in-sub is cloned';
 }
 
-TODO: {
-    $] >= 5.008 or local $TODO = q/lexicals in evals don't work under 5.6/;
-
+{
     BEGIN { $tests += 1 }
 
     sub ec {
