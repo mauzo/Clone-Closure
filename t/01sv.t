@@ -99,17 +99,7 @@ isa_ok  b(\$pvnv),  'B::PVNV',  'PVNV clones';
 cmp_ok  $pvnv, '==', 3.1,       '...correctly';
 is      $pvnv,      'baz',      '...correctly';
 
-BEGIN { $tests += 2 }
-
-use constant PVBM => 'foo';
-
-my $dummy  = index 'foo', PVBM;
-# blead (5.9) doesn't have PVBM
-my $pvbm_c = blessed b(\PVBM);
-my $pvbm   = clone PVBM;
-
-isa_ok  b(\$pvbm),      $pvbm_c,    'PVBM clones';
-is      $pvbm,          'foo',      '...correctly';
+# PVBM/PVGV in t/06mg.t
 
 # PVLV is surprisingly hard to test... it tends to vanish :(
 BEGIN { $tests += 4 }
