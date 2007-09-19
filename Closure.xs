@@ -569,8 +569,11 @@ sv_clone(HV *SEEN, SV *ref)
             if ( mg->mg_obj != NULL ) {
                 switch (mg->mg_type) {
                     case 'r':	/* PERL_MAGIC_qr  */
-                        obj = mg->mg_obj; 
+                    {
+                        regexp *const re = (regexp *)mg->mg_obj;
+                        obj = (SV *)ReREFCNT_inc(re); 
                         break;
+                    }
 
                     case 't':	/* PERL_MAGIC_taint */
                     case '<':	/* PERL_MAGIC_backref */
@@ -594,10 +597,6 @@ sv_clone(HV *SEEN, SV *ref)
                  mg->mg_ptr, 
                  mg->mg_len);
         }
-
-        /* major kludge - why does the vtable for a qr type need to be null? */
-        if ( mg = mg_find(clone, 'r') )
-            mg->mg_virtual = (MGVTBL *) NULL;
     }
 
     /* 2: HASH/ARRAY  - (with 'internal' elements) */

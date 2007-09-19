@@ -107,6 +107,7 @@ sub isnt_flag { return _test_flag 1, @_; }
 
 sub oneliner {
     my ($perl) = @_;
+    $perl =~ tr/\r\n//d;
     my $cmd = "$^X -e " . MM->quote_literal($perl);
     my $val = qx/$cmd/;
     $? and $val = "qx/$cmd/ failed with \$? = $?";
@@ -240,7 +241,7 @@ my $tests;
 
 #define PERL_MAGIC_nkeys	  'k' /* scalar(keys()) lvalue */
 # it is apparently impossible to create a scalar with a value in it that
-# has 'k' magic...
+# has 'k' magic... it only exists on the LHS of an assignment.
 
 #define PERL_MAGIC_dbfile	  'L' /* Debugger %_<filename */
 #define PERL_MAGIC_dbline	  'l' /* Debugger %_<filename element */
@@ -249,10 +250,10 @@ my $tests;
 
     no strict 'refs';
 
-    my $oldP;
-    BEGIN { $oldP = $^P; $^P |= 0x02 }
-    use t::Foo;
-    BEGIN { $^P = $oldP }
+    {
+        local $^P = $^P | 0x02;
+        require t::Foo;
+    }
 
     my $pm  = '_<' . $INC{'t/Foo.pm'};
     ${$pm}{foo} = 'bar';
@@ -275,7 +276,33 @@ my $tests;
 #define PERL_MAGIC_tied		  'P' /* Tied array or hash */
 #define PERL_MAGIC_tiedelem	  'p' /* Tied array or hash element */
 #define PERL_MAGIC_tiedscalar	  'q' /* Tied scalar or handle */
+
 #define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
+{
+    BEGIN { $tests += 8 }
+
+    my $qr = qr/foo/;
+    my $mg = clone $qr;
+
+    # qr//s are already refs
+
+    has_mg      $qr,                'r',        '(sanity check)';
+    has_mg      $mg,                'r',        'qr// clones';
+    isa_ok      $mg,                'Regexp',   '...with class';
+    is_prop     $mg, 'mg/r/REGEX',     $qr,     '...and REGEX';
+    is_prop     $mg, 'mg/r/precomp',   $qr,     '...and precomp';
+    is          $mg,                   $qr,     '...and value';
+    ok          +('barfoobaz' =~ $mg),          '...and still works';
+
+    my $segv = oneliner <<PERL;
+use blib;
+use Clone::Closure qw/clone/;
+
+clone qr/foo/;
+PERL
+    
+    is          $segv,              '',         '...and doesn\'t segfault';
+}
 
 #define PERL_MAGIC_sig		  'S' /* %SIG hash */
 #define PERL_MAGIC_sigelem	  's' /* %SIG hash element */
@@ -393,32 +420,32 @@ SKIP: {
     my $str = 'aabbc';
     my $mg  = clone \substr $str, 3, 2;
 
-    has_mg      \substr($str, 3, 2), 'x', '(sanity check)';
-    hasnt_mg    $mg,        'x',        'substr() loses magic';
-    is          $$mg,       'bb',       '...but keeps value';
+    has_mg      \substr($str, 3, 2), 'x',   '(sanity check)';
+    hasnt_mg    $mg,        'x',            'substr() loses magic';
+    is          $$mg,       'bb',           '...but keeps value';
 
     $$mg = 'dd';
 
-    is          $str,       'aabbc',    'substr() preserved';
+    is          $str,       'aabbc',        'substr() preserved';
 }
 
 #define PERL_MAGIC_defelem	  'y' /* Shadow "foreach" iterator variable /
 #					smart parameter vivification */
 {
-    BEGIN { $tests += 4 }
-
-    sub defelem { return \$_[0] }
+    BEGIN { $tests += 2 }
 
     my %hash;
-    my $mg = clone defelem $hash{a};
 
-    has_mg      defelem($hash{b}), 'y', '(sanity check)';
-    hasnt_mg    $mg,        'y',        'autoviv loses magic';
-    ok          !defined($$mg),         '...is still undef';
+    sub {
+        # can't test with has_mg, as taking a ref destroys the magic
 
-    $$mg = 'a';
+        ok !defined(clone $_[0]),       'cloned autoviv is still undef';
+        ok !exists($hash{a}),           '(sanity check)';
 
-    ok          !exists($hash{a}),      'autoviv preserved';
+        \clone($_[0]);
+
+        ok !exists($hash{a}),           'autoviv preserved';
+    }->($hash{a});
 }
 
 #define PERL_MAGIC_glob		  '*' /* GV (typeglob) */
