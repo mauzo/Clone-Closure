@@ -3,12 +3,13 @@
 use strict;
 use warnings;
 
-BEGIN { eval "use threads" }
+BEGIN { eval "use threads; use threads::shared;" }
 
-use Scalar::Util    qw/blessed tainted reftype/;
+use Scalar::Util    qw/blessed reftype tainted/;
 use Test::More;
 use B               qw/SVf_ROK/;
 use ExtUtils::MM;
+use Taint::Runtime  qw/taint_start taint_stop taint/;
 use Clone::Closure  qw/clone/;
 
 BEGIN { *b = \&B::svref_2object }
@@ -270,12 +271,131 @@ my $tests;
 }
 
 #define PERL_MAGIC_mutex	  'm' /* for lock op */
+
 #define PERL_MAGIC_shared	  'N' /* Shared between threads */
 #define PERL_MAGIC_shared_scalar  'n' /* Shared between threads */
+SKIP: {
+    my $skip;
+    skip "no threads", $skip unless defined &share;
+
+    {
+        BEGIN { $skip += 5 }
+
+        my $shr;
+        share($shr);
+        $shr   = 'foo';
+        my $mg = eval { clone $shr };
+
+        ok      !defined($@),               'shared scalars clone';
+        has_mg  \$shr,              'n',    '(sanity check)';
+        has_mg  \$mg,               'n',    '...with magic';
+        is      $mg,                $shr,   '...with value';
+
+        threads->create(sub { $shr = 'bar' })->join;
+
+        is      $mg,                'bar',  '...and still work';
+    }
+
+    {
+        BEGIN { $skip += 5 }
+
+        my @shr;
+        share(@shr);
+        @shr   = qw/foo bar/;
+        my $mg = eval { clone \@shr };
+
+        ok          !defined($@),           'shared arrays clone';
+        has_mg      \@shr,          'N',    '(sanity check)';
+        has_mg      $mg,            'N',    '...with magic';
+        is_deeply   $mg,            \@shr,  '...with value';
+
+        threads->create(sub { $shr[0] = 'baz' })->join;
+
+        is          $mg->[0],       'baz',  '...and still work';
+    }
+
+    BEGIN { $tests += $skip }
+}
+
 #define PERL_MAGIC_collxfrm	  'o' /* Locale transformation */
+
 #define PERL_MAGIC_tied		  'P' /* Tied array or hash */
 #define PERL_MAGIC_tiedelem	  'p' /* Tied array or hash element */
+{
+    BEGIN { $tests += 11 }
+
+    use Tie::Array;
+
+    tie my @ary, 'Tie::StdArray';
+    @ary = qw/a b c/;
+    my $Pmg = clone \@ary;
+    my $pmg = clone \$ary[2];
+
+    isa_ok      b($Pmg),            'B::AV',    'tied array cloned';
+    has_mg      \@ary,              'P',        '(sanity check)';
+    has_mg      $Pmg,               'P',        '...with magic';
+    ok          tied(@$Pmg),                    '...still tied';
+    isnt        tied(@$Pmg),        tied(@ary), '...not copied';
+    is          $Pmg->[0],          'a',        '...correctly';
+
+    $Pmg->[0] = 'd';
+
+    is          $Pmg->[0],          'd',        '(sanity check)';
+    is          $ary[0],            'a',        '...tied array preserved';
+
+    has_mg      \$ary[2],           'p',        '(sanity check)';
+    hasnt_mg    $pmg,               'p',        '$tied[2] loses magic';
+    is          $$pmg,              'c',        '...but keeps value';
+}
+{
+    BEGIN { $tests += 11 }
+
+    use Tie::Hash;
+
+    tie my %hsh, 'Tie::StdHash';
+    %hsh = qw/a b c d/;
+    my $Pmg = clone \%hsh;
+    my $pmg = clone \$hsh{c};
+
+    isa_ok      b($Pmg),            'B::HV',    'tied hash cloned';
+    has_mg      \%hsh,              'P',        '(sanity check)';
+    has_mg      $Pmg,               'P',        '...with magic';
+    ok          tied(%$Pmg),                    '...still tied';
+    isnt        tied(%$Pmg),        tied(%hsh), '...not copied';
+    is          $Pmg->{a},          'b',        '...correctly';
+
+    $Pmg->{a} = 'e';
+
+    is          $Pmg->{a},          'e',        '(sanity check)';
+    is          $hsh{a},            'b',        '...tied hash preserved';
+
+    has_mg      \$hsh{c},           'p',        '(sanity check)';
+    hasnt_mg    $pmg,               'p',        '$tied{c} loses magic';
+    is          $$pmg,              'd',        '...but keeps value';
+}
+
 #define PERL_MAGIC_tiedscalar	  'q' /* Tied scalar or handle */
+{
+    BEGIN { $tests += 8 }
+
+    use Tie::Scalar;
+
+    tie my $sv, 'Tie::StdScalar';
+    $sv = 'foo';
+    my $mg = clone \$sv;
+
+    isa_ok      b($mg),             'B::SV',    'tied scalar cloned';
+    has_mg      \$sv,               'q',        '(sanity check)';
+    has_mg      $mg,                'q',        '...with magic';
+    ok          tied($$mg),                     '...still tied';
+    isnt        tied($$mg),         tied($sv),  '...not copied';
+    is          $$mg,               'foo',      '...correctly';
+
+    $$mg = 'bar';
+
+    is          $$mg,               'bar',      '(sanity check)';
+    is          $sv,                'foo',      'tied scalar preserved';
+}
 
 #define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
 {
@@ -288,7 +408,7 @@ my $tests;
 
     has_mg      $qr,                'r',        '(sanity check)';
     has_mg      $mg,                'r',        'qr// clones';
-    isa_ok      $mg,                'Regexp',   '...with class';
+    isa_ok      $mg,                'Regexp',   '...and';
     is_prop     $mg, 'mg/r/REGEX',     $qr,     '...and REGEX';
     is_prop     $mg, 'mg/r/precomp',   $qr,     '...and precomp';
     is          $mg,                   $qr,     '...and value';
@@ -359,6 +479,22 @@ PERL
 }
 
 #define PERL_MAGIC_taint	  't' /* Taintedness */
+{
+    BEGIN { $tests += 3 }
+
+    taint_start;
+
+    my $t  = "foo";
+    taint \$t;
+    my $mg = clone $t;
+
+    ok      tainted($t),                '(sanity check)';
+    ok      tainted($mg),               'taintedness clones';
+    has_mg  \$mg,               't',    '...with magic';
+
+    taint_stop;
+}
+
 #define PERL_MAGIC_uvar		  'U' /* Available for use by extensions */
 #define PERL_MAGIC_uvar_elem	  'u' /* Reserved for use by extensions */
 
@@ -399,16 +535,19 @@ SKIP: {
     my $dummy = index $str, 'a';
     
     mg(\$str)->{w} or skip 'no utf8 cache', $skip;
-    skip 'utf8 segfaults', $skip;
 
-    BEGIN { $skip += 4 }
+    TODO: {
+        todo_skip 'utf8 segfaults', $skip;
 
-    my $mg = clone $str;
+        BEGIN { $skip += 4 }
 
-    has_mg  \$str,          'w',        '(sanity check)';
-    has_mg  \$mg,           'w',        'utf8 cache is cloned';
-    is      $mg,            $str,       '...with value';
-    is_prop \$mg, 'mg/V/PTR', \$str,    '...correctly';
+        my $mg = clone $str;
+
+        has_mg  \$str,          'w',        '(sanity check)';
+        has_mg  \$mg,           'w',        'utf8 cache is cloned';
+        is      $mg,            $str,       '...with value';
+        is_prop \$mg, 'mg/V/PTR', \$str,    '...correctly';
+    }
     
     BEGIN { $tests += $skip }
 }
@@ -432,7 +571,7 @@ SKIP: {
 #define PERL_MAGIC_defelem	  'y' /* Shadow "foreach" iterator variable /
 #					smart parameter vivification */
 {
-    BEGIN { $tests += 2 }
+    BEGIN { $tests += 3 }
 
     my %hash;
 
@@ -442,7 +581,7 @@ SKIP: {
         ok !defined(clone $_[0]),       'cloned autoviv is still undef';
         ok !exists($hash{a}),           '(sanity check)';
 
-        \clone($_[0]);
+        my $dummy = \clone($_[0]);
 
         ok !exists($hash{a}),           'autoviv preserved';
     }->($hash{a});
