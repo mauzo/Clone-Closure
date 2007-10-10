@@ -57,6 +57,12 @@ newSV_type(svtype type)
 #define HV_ITERNEXT_WANTPLACEHOLDERS 0
 #endif
 
+/* again, not correct but good enough for our purposes */
+#ifndef sv_magicext
+#define sv_magicext(sv, obj, how, vtbl, name, namelen) \
+    sv_magic(sv, obj, how, name, namelen)
+#endif
+
 #ifdef DEBUG_CLONE
 #define TRACEME(a) warn a;
 #else
@@ -64,28 +70,33 @@ newSV_type(svtype type)
 #endif
 
 #define TRACE_SV(action, name, sv)                              \
-    TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s\n", action, name, sv,    \
+    TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s%s%s\n", action, name, sv,    \
         SvREFCNT(sv), SvFLAGS(sv),                              \
         (SvPADMY(sv)   ? " PADMY"   : ""),                      \
         (SvPADTMP(sv)  ? " PADTMP"  : ""),                      \
         (SvTEMP(sv)    ? " TEMP"    : ""),                      \
-        (SvFAKE(sv)    ? " FAKE"    : "")                       \
+        (SvFAKE(sv)    ? " FAKE"    : ""),                      \
+        (SvMAGICAL(sv) ? " MAGIC"   : "")                       \
     ))
 
 #define TRACE_SCOPE(cv) TRACEME(("scope 0x%x:%s\n", cv, \
     (cv && CvUNIQUE(cv)) ? " UNIQUE" : ""))
+
+#define TRACE_MG(action, type, ptr, len, obj)       \
+    TRACEME(("%s (%c magic) = 0x%x[%d], 0x%x\n",    \
+        action, type, ptr, len, obj))
 
 #define CLONE_KEY(x) ((char *) x) 
 
 #define CLONE_STORE(x,y)						\
 do {									\
     if (!hv_store(SEEN, CLONE_KEY(x), PTRSIZE, SvREFCNT_inc(y), 0)) {	\
-	SvREFCNT_dec(y); /* Restore the refcount */			\
+        SvREFCNT_dec(y); /* Restore the refcount */                     \
 	croak("Can't store clone in seen hash (HSEEN)");		\
     }									\
-    else {	\
-  TRACE_SV("ref", "SEEN", x);                           \
-  TRACE_SV("clone", "SEEN", y);                         \
+    else {	                                                        \
+        TRACE_SV("ref", "SEEN", x);                                     \
+        TRACE_SV("clone", "SEEN", y);                                   \
     }									\
 } while (0)
 
@@ -108,8 +119,25 @@ hv_clone(HV *SEEN, HV *ref, HV *clone)
     hv_iterinit(ref);
     while (next = hv_iternext_flags(ref, HV_ITERNEXT_WANTPLACEHOLDERS)) {
         SV *key = hv_iterkeysv(next);
-        hv_store_ent(clone, key, 
-            sv_clone(SEEN, hv_iterval(ref, next)), 0);
+        SV *val = hv_iterval(ref, next);
+        SV *cln;
+        HE *elm;
+
+        SvGETMAGIC(val);
+        TRACE_SV("ref", "HV elem", val);
+
+        cln = sv_clone(SEEN, val);
+
+        elm = hv_store_ent(clone, key, cln, 0);
+        SvSETMAGIC(cln);
+
+        if (elm) {
+            TRACE_SV("clone", "HV elem", HeVAL(elm));
+        }
+        else {
+            TRACE_SV("drop", "HV elem", cln);
+            SvREFCNT_dec(cln);
+        }
     }
 
     TRACE_SV("clone", "HV", clone);
@@ -118,26 +146,42 @@ hv_clone(HV *SEEN, HV *ref, HV *clone)
 static void
 av_clone(HV *SEEN, AV *ref, AV *clone)
 {
-  SV **svp;
-  SV *val = NULL;
-  I32 arrlen = 0;
-  int i = 0;
+    I32 arrlen = 0;
+    int i = 0;
 
-  TRACE_SV("ref", "AV", ref);
+    TRACE_SV("ref", "AV", ref);
 
-  if (SvREFCNT(ref) > 1)
-    CLONE_STORE(ref, (SV *)clone);
+    if (SvREFCNT(ref) > 1)
+        CLONE_STORE(ref, (SV *)clone);
 
-  arrlen = av_len(ref);
-  av_extend(clone, arrlen);
+    arrlen = av_len(ref);
+    av_extend(clone, arrlen);
 
-  for (i = 0; i <= arrlen; i++) {
-      svp = av_fetch(ref, i, 0);
-      if (svp)
-	av_store(clone, i, sv_clone(SEEN, *svp));
-  }
+    for (i = 0; i <= arrlen; i++) {
+        SV **val = av_fetch(ref, i, 0);
 
-  TRACE_SV("clone", "AV", clone);
+        if (val) {
+            SV *cln, **elm;
+
+            SvGETMAGIC(*val);
+            TRACE_SV("ref", "AV elem", *val);
+
+            cln = sv_clone(SEEN, *val);
+
+            elm = av_store(clone, i, cln);
+            SvSETMAGIC(cln);
+
+            if (elm) {
+                TRACE_SV("clone", "AV elem", *elm);
+            }
+            else {
+                TRACE_SV("drop", "AV elem", cln);
+                SvREFCNT_dec(cln);
+            }
+        }
+    }
+
+    TRACE_SV("clone", "AV", clone);
 }
 
 /* largely taken from pad.c:cv_clone (in op.c in 5.6) */
@@ -283,8 +327,13 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
             can_copy = 1;
         }
 
-        /* PADTMP entries are targs/GVs/constants, and need copying */
-        else if (SvPADTMP(val_sv)) {
+        /* PADTMP entries are targs/GVs/constants, and need copying.
+         * PADGV/CONST are used by ithreads */
+        else if (
+            SvPADTMP(val_sv) || 
+            IS_PADGV(val_sv) ||
+            IS_PADCONST(val_sv)
+        ) {
             name = "PADTMP";
             can_copy = 1;
         }
@@ -330,8 +379,12 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
         /* just in case :) */
         else {
             warn("Clone::Closure: unknown pad entry: please report a bug!");
-            TRACE_SV("unknown", "name", name_sv);
-            TRACE_SV("unknown", "val",  val_sv);
+#ifdef DEBUG_CLONE
+            warn("name:\n");
+            sv_dump(name_sv);
+            warn("val:\n");
+            sv_dump(val_sv);
+#endif
             continue;
         }
 
@@ -354,11 +407,12 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
         /* can't use av_store as the refcounts get wrong:
          * pads are AvREAL even though they shouldn't be */
         (AvARRAY(padv))[i] = new_sv;
-        /*av_store(padv, i, SvREFCNT_inc(new_sv));*/
 
-        if ( SvREFCNT(old_sv) > 1 )
+        /* XXX I don't like this: sometimes the refcnt gets too low */
+        if ( SvREFCNT(old_sv) > 1 ) {
             SvREFCNT_dec(old_sv);
-        TRACE_SV("drop", name, old_sv);
+            TRACE_SV("drop", name, old_sv);
+        }
     }
 
     TRACE_SV("clone", "pad", clone);
@@ -442,20 +496,19 @@ sv_clone(HV *SEEN, SV *ref)
     dTHX;
     SV *clone = ref;
     SV **seen = NULL;
-    UV visible = (SvREFCNT(ref) > 1);
-    int magic_ref = 0;
+    int recurse = 1;
 
     TRACE_SV("ref", "SV", ref);
-
-    if ( visible && (seen = CLONE_FETCH(ref)) ) {
-        SvREFCNT_inc(*seen);
-        TRACE_SV("fetch", "SV", *seen);
-        return *seen;
-    }
 
     if (SvIMMORTAL(ref)) {
         TRACE_SV("immortal", "SV", ref);
         return ref;
+    }
+
+    if ( seen = CLONE_FETCH(ref) ) {
+        SvREFCNT_inc(*seen);
+        TRACE_SV("fetch", "SV", *seen);
+        return *seen;
     }
 
     TRACEME(("switch: (0x%x)\n", ref));
@@ -499,6 +552,18 @@ sv_clone(HV *SEEN, SV *ref)
             clone = newSVsv(ref);
             break;
 
+#if PERL_VERSION <= 8
+        case SVt_PVBM:	/* 8 */
+            clone = newSVsv(ref);
+            fbm_compile(clone, SvTAIL(ref) ? FBMcf_TAIL : 0);
+            break;
+#endif
+    
+        case SVt_PVLV:	/* 9 */
+            TRACEME(("  PVLV\n"));
+            clone = newSVsv(ref);
+            break;
+
         case SVt_PVAV:	/* 10 */
             TRACEME(("  AV\n"));
             clone = (SV *)newAV();
@@ -514,10 +579,6 @@ sv_clone(HV *SEEN, SV *ref)
             clone = (SV *)CC_cv_clone ((CV *) ref);
             break;
 
-#if PERL_VERSION <= 8
-        case SVt_PVBM:	/* 8 */
-#endif
-        case SVt_PVLV:	/* 9 */
         case SVt_PVGV:	/* 13 */
         case SVt_PVFM:	/* 14 */
         case SVt_PVIO:	/* 15 */
@@ -534,74 +595,119 @@ sv_clone(HV *SEEN, SV *ref)
     * to properly handle circular references. cb 2001-02-06
     */
 
-    if (visible)
-        CLONE_STORE(ref,clone);
+    CLONE_STORE(ref,clone);
 
-    /*
-     * We'll assume (in the absence of evidence to the contrary) that A) a
-     * tied hash/array doesn't store its elements in the usual way (i.e.
-     * the mg->mg_object(s) take full responsibility for them) and B) that
-     * references aren't tied.
-     *
-     * If theses assumptions hold, the three options below are mutually
-     * exclusive.
-     *
-     * More precisely: 1 & 2 are probably mutually exclusive; 2 & 3 are 
-     * definitely mutually exclusive; we have to test 1 before giving 2
-     * a chance; and we'll assume that 1 & 3 are mutually exclusive unless
-     * and until we can be test-cased out of our delusion.
-     *
-     * chocolateboy: 2001-05-29
-     */
-     
-    /* 1: TIED */
-    if (SvMAGICAL(ref)) {
-        MAGIC* mg;
-        MGVTBL *vtable = 0;
+    if (SvMAGICAL(ref) && clone != ref) {
+        MAGIC*  mg;
+        int     shared = 0;
 
         for (mg = SvMAGIC(ref); mg; mg = mg->mg_moremagic) {
-            SV *obj = (SV *) NULL;
-            /* we don't want to clone a qr (regexp) object */
-            /* there are probably other types as well ...  */
-            TRACEME(("magic type: %c\n", mg->mg_type));
+            SV      *obj = mg->mg_obj;
+            char    *ptr = mg->mg_ptr;
+            int     keepmg = 1, copymg = 0;
 
-            /* Some mg_obj's can be null, don't bother cloning */
-            if ( mg->mg_obj != NULL ) {
-                switch (mg->mg_type) {
-                    case 'r':	/* PERL_MAGIC_qr  */
-                    {
-                        regexp *const re = (regexp *)mg->mg_obj;
-                        obj = (SV *)ReREFCNT_inc(re); 
-                        break;
-                    }
+            TRACE_MG("ref", mg->mg_type, ptr, mg->mg_len, obj);
 
-                    case 't':	/* PERL_MAGIC_taint */
-                    case '<':	/* PERL_MAGIC_backref */
-                        continue;
-                        break;
-
-                    default:
-                        obj = sv_clone(SEEN, mg->mg_obj); 
+            switch (mg->mg_type) {
+                case PERL_MAGIC_qr:
+                {
+                    regexp *const re = (regexp *)mg->mg_obj;
+                    obj = (SV *)ReREFCNT_inc(re); 
+                    break;
                 }
+
+                case PERL_MAGIC_utf8:
+                {
+                    void *tmp;
+
+                    if (mg->mg_ptr) {
+                        Newxz(tmp, PERL_MAGIC_UTF8_CACHESIZE * 2, STRLEN);
+                        ptr = (char *)tmp;
+                        Copy(
+                            mg->mg_ptr, ptr,
+                            PERL_MAGIC_UTF8_CACHESIZE * 2, STRLEN
+                        );
+                    }
+                    break;
+                }
+
+                case PERL_MAGIC_tiedelem:
+                    keepmg = 0;
+                    shared = -1;
+                    break;
+
+#define SvSHRTIE(sv, mg) \
+    sv_isa( SvTIED_obj(sv, mg), "threads::shared::tie" )
+
+                case PERL_MAGIC_tied:
+                    /* PL_vtbl_pack is normal tie magic */
+                    if (mg->mg_virtual == &PL_vtbl_pack) {
+                        recurse = 0;
+                        copymg  = 1;
+                    }
+                    else {
+                        if (SvSHRTIE(ref, mg)) {
+                            shared  = 1;
+                            keepmg  = 0;
+                        }
+                        else {
+                            croak("tie magic with unknown vtable");
+                        }
+                    }
+                    break;
+
+                case PERL_MAGIC_tiedscalar:
+                case PERL_MAGIC_taint:
+                case PERL_MAGIC_uvar:
+                case PERL_MAGIC_uvar_elem:
+                case PERL_MAGIC_vstring:
+                case PERL_MAGIC_glob:
+                case PERL_MAGIC_ext:
+                    copymg = 1;
+                    break;
+
+                case PERL_MAGIC_shared:
+                    croak("don't know how to handle 'N' magic!");
+
+                case PERL_MAGIC_shared_scalar:
+                    if (!shared) shared = 1;
+                    keepmg = 0;
+                    break;
+
+                /* bm & backref magics are handled separately */
+                default:
+                    keepmg = 0;
+                    break;
+            }
+
+            if (copymg)
+                obj = obj ? sv_clone(SEEN, mg->mg_obj) : NULL;
+
+            if (keepmg) {
+                TRACE_MG("clone", mg->mg_type, ptr, mg->mg_len, obj);
+                sv_magicext(
+                    clone, 
+                    obj,
+                    mg->mg_type, 
+                    mg->mg_virtual,
+                    ptr, 
+                    mg->mg_len
+                );
             }
             else {
-                TRACEME(("magic object for type %c in NULL\n", mg->mg_type));
+                TRACE_MG("drop", mg->mg_type, mg->mg_ptr, mg->mg_len,
+                mg->mg_obj);
             }
+        }
 
-            magic_ref++;
-
-            /* this is plain old magic, so do the same thing */
-            sv_magic(clone, 
-                 obj,
-                 mg->mg_type, 
-                 mg->mg_ptr, 
-                 mg->mg_len);
+        if (shared > 0) {
+            TRACE_SV("share", "SV", clone);
+            SvSHARE(clone);
         }
     }
 
-    /* 2: HASH/ARRAY  - (with 'internal' elements) */
-    if ( magic_ref ) {
-        ;;
+    if (!recurse) {
+        TRACE_SV("skip", "SV", clone);
     }
     else if ( SvTYPE(ref) == SVt_PVHV ) {
         hv_clone(SEEN, (HV *)ref, (HV *)clone);
@@ -624,6 +730,7 @@ sv_clone(HV *SEEN, SV *ref)
         }
 
         if (SvWEAKREF(ref)) {
+            TRACE_SV("weaken", "RV", clone);
             sv_rvweaken(clone);
         }
 
@@ -640,6 +747,11 @@ sv_clone(HV *SEEN, SV *ref)
 MODULE = Clone::Closure		PACKAGE = Clone::Closure
 
 PROTOTYPES: ENABLE
+
+void
+_breakpoint()
+    PPCODE:
+        XSRETURN_UNDEF;
 
 void
 clone(ref)

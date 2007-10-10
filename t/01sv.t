@@ -99,21 +99,6 @@ isa_ok  b(\$pvnv),  'B::PVNV',  'PVNV clones';
 cmp_ok  $pvnv, '==', 3.1,       '...correctly';
 is      $pvnv,      'baz',      '...correctly';
 
-# PVBM/PVGV in t/06mg.t
-
-# PVLV is surprisingly hard to test... it tends to vanish :(
-BEGIN { $tests += 4 }
-
-my $foo  = 'foo';
-isa_ok  b(\substr $foo, 0, 2),
-                        'B::PVLV',  'sanity check';
-isa_ok  b(\clone substr $foo, 0, 2),
-                        'B::PVLV',  'PVLV clones';
-is      clone(substr $foo, 0, 2),
-                        'fo',       '...correctly';
-
-sub set_lvalue { $_[0] = 'got' }
-set_lvalue clone substr $foo, 0, 2;
-is      $foo,           'goto',     '...preserving lvalue';
+# PVBM/PVGV/PVLV in t/06mg.t
 
 BEGIN { plan tests => $tests }

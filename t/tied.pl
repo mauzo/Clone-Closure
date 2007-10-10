@@ -85,6 +85,8 @@ sub NEXTKEY {
 
 package TIED_ARRAY;
 
+use Carp;
+
 sub TIEARRAY {
 	my $self = bless [], shift;
 	return $self;

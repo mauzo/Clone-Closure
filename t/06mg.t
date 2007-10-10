@@ -77,11 +77,24 @@ sub is_prop {
                 $o->{res} = $o->{obj}->$meth;
             }
 
-            $got{res} eq $exp{res} or die <<DIE
+            my $ok;
+
+            if (not defined $got{res}) {
+                $ok = not defined $exp{res};
+            }
+            else {
+                $ok = defined $exp{res}
+                    && $got{res} eq $exp{res};
+            }
+
+            $_ = defined($_) ? "'$_'" : 'undef'
+                for $got{res}, $exp{res};
+
+            $ok or die <<DIE
 $comp[0]()->$meth was
-    '$got{res}',
+    $got{res},
 expected
-    '$exp{res}'.
+    $exp{res}.
 DIE
         },
         $name,
@@ -136,29 +149,30 @@ my $tests;
 
 #define PERL_MAGIC_bm		  'B' /* Boyer-Moore (fast string search) */
 {
-    BEGIN { $tests += 7 }
+    BEGIN { $tests += 8 }
 
     use constant PVBM => 'foo';
 
     my $dummy  = index 'foo', PVBM;
     # blead (5.9) doesn't have PVBM, and uses PVGV instead
     my $type   = blessed b(\PVBM);
-    my $pvbm   = clone PVBM;
+    my $pvbm   = clone \PVBM;
 
-    isa_ok  b(\$pvbm),      $type,      'PVBM cloned';
+    isa_ok  b($pvbm),       $type,      'PVBM cloned';
+    isnt    $pvbm,          \PVBM,      '...not a copy';
     has_mg  \PVBM,          'B',        '(sanity check)';
-    has_mg  \$pvbm,         'B',        '...with magic';
-    is      $pvbm,          'foo',      '...and value';
-    is_prop \$pvbm, 'b/RARE',   \PVBM,  '...and RARE';
-    is_prop \$pvbm, 'b/TABLE',  \PVBM,  '...and TABLE';
-    is      index('foo', $pvbm),    0,  '...and still works';
+    has_mg  $pvbm,          'B',        '...with magic';
+    is      $$pvbm,         'foo',      '...and value';
+    is_prop $pvbm, 'b/RARE',    \PVBM,  '...and RARE';
+    is_prop $pvbm, 'b/TABLE',   \PVBM,  '...and TABLE';
+    is      index('foo', $$pvbm),   0,  '...and still works';
 }
 
 #define PERL_MAGIC_regdata	  'D' /* Regex match position data
 #					(@+ and @- vars) */
 #define PERL_MAGIC_regdatum	  'd' /* Regex match position data element */
 {
-    BEGIN { $tests += 6 }
+    BEGIN { $tests += 7 }
 
     "foo" =~ /foo/;
     my $Dmg = clone \@+;
@@ -167,6 +181,7 @@ my $tests;
     has_mg      \@+,        'D',        '(sanity check)';
     hasnt_mg    $Dmg,       'D',        '@+ loses magic';
     is_deeply   $Dmg,       \@+,        '...but keeps value';
+    isnt        \$Dmg->[0], \$+[0],     '...not copied';
 
     has_mg      \$+[0],     'd',        '(sanity check)';
     hasnt_mg    $dmg,       'd',        '$+[0] loses magic';
@@ -284,16 +299,16 @@ SKIP: {
         my $shr;
         share($shr);
         $shr   = 'foo';
-        my $mg = eval { clone $shr };
+        my $mg = clone \$shr;
 
-        ok      !defined($@),               'shared scalars clone';
         has_mg  \$shr,              'n',    '(sanity check)';
-        has_mg  \$mg,               'n',    '...with magic';
-        is      $mg,                $shr,   '...with value';
+        has_mg  $mg,                'n',    'shared scalars clone';
+        is      $$mg,               $shr,   '...with value';
 
-        threads->create(sub { $shr = 'bar' })->join;
+        threads->create(sub { $$mg = 'bar' })->join;
 
-        is      $mg,                'bar',  '...and still work';
+        is      $$mg,               'bar',  '...and still work';
+        is      $shr,               'foo',  'original preserved';
     }
 
     {
@@ -302,16 +317,17 @@ SKIP: {
         my @shr;
         share(@shr);
         @shr   = qw/foo bar/;
-        my $mg = eval { clone \@shr };
 
-        ok          !defined($@),           'shared arrays clone';
-        has_mg      \@shr,          'N',    '(sanity check)';
-        has_mg      $mg,            'N',    '...with magic';
+        my $mg = clone \@shr;
+
+        has_mg      \@shr,          'P',    '(sanity check)';
+        has_mg      $mg,            'P',    'shared arrays clone';
         is_deeply   $mg,            \@shr,  '...with value';
 
-        threads->create(sub { $shr[0] = 'baz' })->join;
+        threads->create(sub { $mg->[0] = 'baz' })->join;
 
         is          $mg->[0],       'baz',  '...and still work';
+        is          $shr[0],        'foo',  'original preserved';
     }
 
     BEGIN { $tests += $skip }
@@ -456,13 +472,20 @@ PERL
     is      reftype($$smg), 'CODE',     '...but value is cloned'
         and ($$smg)->();
     isnt        $$smg,      $SIG{USR1}, '...not copied';
-    is          $count,     1,          '...but value is cloned';
-
-    BEGIN { $tests += 2 }
+    is          $count,     1,          '...correctly';
 
     SKIP: {
         my $skip;
-        skip 'no SIGUSR1', 2 unless $HAS_USR1;
+        skip 'no SIGUSR1', $skip unless $HAS_USR1;
+        skip 'signals don\'t work with threads', $skip 
+            if defined &share;
+
+        BEGIN { $skip += 3 }
+
+        $count = 0;
+        kill USR1 => $$;
+
+        is      $count,     1,          '(sanity check)';
 
         $Smg->{USR1} = sub { 1; };
         $count = 0;
@@ -475,6 +498,8 @@ PERL
         kill USR1 => $$;
 
         is      $count,     1,          '$SIG{USR1} preserved';
+
+        BEGIN { $tests += $skip }
     }
 }
 
@@ -531,22 +556,33 @@ PERL
 SKIP: {
     my $skip;
 
-    my $str = "\x{fff}a";
-    my $dummy = index $str, 'a';
-    
-    mg(\$str)->{w} or skip 'no utf8 cache', $skip;
-
-    TODO: {
-        todo_skip 'utf8 segfaults', $skip;
-
+    {
         BEGIN { $skip += 4 }
 
-        my $mg = clone $str;
+        my $str = "\x{fff}a";
+        my $dummy = index $str, 'a';
+        
+        mg(\$str)->{w} or skip 'no utf8 cache', $skip;
+
+        my $mg = clone \$str;
 
         has_mg  \$str,          'w',        '(sanity check)';
-        has_mg  \$mg,           'w',        'utf8 cache is cloned';
-        is      $mg,            $str,       '...with value';
-        is_prop \$mg, 'mg/V/PTR', \$str,    '...correctly';
+        has_mg  $mg,            'w',        'utf8 cache is cloned';
+        is      $$mg,           $str,       '...with value';
+        is_prop $mg, 'mg/w/PTR', \$str,     '...correctly';
+    }
+    {
+        BEGIN { $skip += 4 }
+
+        my $str   = "foo";
+        utf8::upgrade($str);
+        my $tmp   = substr $str, 2, 1;
+        my $mg    = clone \$str;
+
+        has_mg  \$str,          'w',        '(sanity check)';
+        has_mg  $mg,            'w',        'utf8 cache is cloned';
+        is      $$mg,           $str,       '...with value';
+        is_prop $mg, 'mg/w/PTR', \$str,     '...correctly';
     }
     
     BEGIN { $tests += $skip }
@@ -557,7 +593,7 @@ SKIP: {
     BEGIN { $tests += 4 }
 
     my $str = 'aabbc';
-    my $mg  = clone \substr $str, 3, 2;
+    my $mg  = clone \substr $str, 2, 2;
 
     has_mg      \substr($str, 3, 2), 'x',   '(sanity check)';
     hasnt_mg    $mg,        'x',            'substr() loses magic';
@@ -704,7 +740,7 @@ SKIP: {
         is_flag \$rv,           SVf_ROK,    '...and a reference';
         is_flag $rv,            SVf_ROK,    '...to a reference';
         has_mg  \$circ,         '<',        '(sanity check)';
-        has_mg  \$rv,           '<',        '...with magic';
+        has_mg  $rv,            '<',        '...with magic';
         ok      isweak($$rv),               '...preserving isweak';
         isnt    $$rv,           \$circ,     '...not copied';
         is      $$$rv,          $$rv,       '...correctly';
