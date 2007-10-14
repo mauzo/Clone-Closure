@@ -620,6 +620,7 @@ sv_clone(HV *SEEN, SV *ref)
                 {
                     void *tmp;
 
+#ifdef PERL_MAGIC_UTF8_CACHESIZE
                     if (mg->mg_ptr) {
                         Newxz(tmp, PERL_MAGIC_UTF8_CACHESIZE * 2, STRLEN);
                         ptr = (char *)tmp;
@@ -628,6 +629,9 @@ sv_clone(HV *SEEN, SV *ref)
                             PERL_MAGIC_UTF8_CACHESIZE * 2, STRLEN
                         );
                     }
+#else
+                    croak("can't handle 'w' magic under this version of perl");
+#endif
                     break;
                 }
 
@@ -701,8 +705,12 @@ sv_clone(HV *SEEN, SV *ref)
         }
 
         if (shared > 0) {
+#ifdef SvSHARE
             TRACE_SV("share", "SV", clone);
             SvSHARE(clone);
+#else
+            croak("can't share values in this version of perl");
+#endif
         }
     }
 

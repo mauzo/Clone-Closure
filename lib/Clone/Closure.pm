@@ -1,6 +1,6 @@
 package Clone::Closure;
 
-use 5.006;
+use 5.006001;
 
 use strict;
 use Carp;

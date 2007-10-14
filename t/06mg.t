@@ -12,6 +12,16 @@ use ExtUtils::MM;
 use Taint::Runtime  qw/taint_start taint_stop taint/;
 use Clone::Closure  qw/clone/;
 
+# Test::Builder has some too-clever-by-half fakery to detect if the test
+# actually dies; however, under 5.6.1 it gets confused by eval {} :(
+
+if ($] < 5.008) {
+    my $die = $SIG{__DIE__};
+    $SIG{__DIE__} = sub {
+        ($^S and defined $^S) or $die->();
+    };
+}
+
 BEGIN { *b = \&B::svref_2object }
 
 use constant        SVp_SCREAM => 0x08000000;
@@ -20,7 +30,7 @@ sub mg {
     my %mg;
     my $mg = eval { b($_[0])->MAGIC };
 
-    while ($mg) {
+    while ($mg and $$mg) {
         $mg{ $mg->TYPE } = $mg;
         $mg = $mg->MOREMAGIC;
     }
@@ -425,13 +435,18 @@ SKIP: {
     has_mg      $qr,                'r',        '(sanity check)';
     has_mg      $mg,                'r',        'qr// clones';
     isa_ok      $mg,                'Regexp',   '...and';
-    is_prop     $mg, 'mg/r/REGEX',     $qr,     '...and REGEX';
-    is_prop     $mg, 'mg/r/precomp',   $qr,     '...and precomp';
+
+    SKIP: {
+        skip "no B::MAGIC->REGEX", 2 unless B::MAGIC->can('REGEX');
+        is_prop     $mg, 'mg/r/REGEX',     $qr,     '...and REGEX';
+        is_prop     $mg, 'mg/r/precomp',   $qr,     '...and precomp';
+    }
+
     is          $mg,                   $qr,     '...and value';
     ok          +('barfoobaz' =~ $mg),          '...and still works';
 
     my $segv = oneliner <<PERL;
-use blib;
+BEGIN { unshift \@INC, qw,inc blib/lib blib/arch,; }
 use Clone::Closure qw/clone/;
 
 clone qr/foo/;
@@ -524,16 +539,22 @@ PERL
 #define PERL_MAGIC_uvar_elem	  'u' /* Reserved for use by extensions */
 
 #define PERL_MAGIC_vstring	  'V' /* SV was vstring literal */
-{
-    BEGIN { $tests += 4 }
+SKIP: {
+    my $skip;
 
     my $vs = v1.2.3;
+
+    skip "no vstrings", $skip unless mg(\$vs)->{V};
+
+    BEGIN { $skip += 3 }
+
     my $mg = clone $vs;
 
-    has_mg  \$vs,           'V',        '(sanity check)';
     has_mg  \$mg,           'V',        'vstring keeps magic';
     is      $mg,            $vs,        '...and value';
     is_prop \$mg, 'mg/V/PTR', \$vs,     '...correctly';
+
+    BEGIN { $tests += $skip }
 }
 
 #define PERL_MAGIC_vec		  'v' /* vec() lvalue */
