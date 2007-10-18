@@ -173,8 +173,14 @@ my $tests;
     has_mg  \PVBM,          'B',        '(sanity check)';
     has_mg  $pvbm,          'B',        '...with magic';
     is      $$pvbm,         'foo',      '...and value';
-    is_prop $pvbm, 'b/RARE',    \PVBM,  '...and RARE';
-    is_prop $pvbm, 'b/TABLE',   \PVBM,  '...and TABLE';
+
+    SKIP: {
+        skip 'B doesn\'t support PVBM methods', 2
+            unless eval { b(\PVBM)->RARE; 1; };
+        is_prop $pvbm, 'b/RARE',    \PVBM,  '...and RARE';
+        is_prop $pvbm, 'b/TABLE',   \PVBM,  '...and TABLE';
+    }
+
     is      index('foo', $$pvbm),   0,  '...and still works';
 }
 
@@ -651,9 +657,16 @@ SKIP: {
     my $glob = *bar;
     my $gv   = clone *bar;
 
+    my $has_mg = exists mg(\*bar)->{'*'};
+
     isa_ok  b(\$gv),        'B::GV',        'GV cloned';
-    has_mg  \*bar,          '*',            '(sanity check)';
-    has_mg  \$gv,           '*',            '...with magic';
+
+    SKIP: {
+        skip 'globs have no magic', 2 unless $has_mg;
+        has_mg  \*bar,          '*',            '(sanity check)';
+        has_mg  \$gv,           '*',            '...with magic';
+    }
+
     SKIP: {
         skip 'can\'t test globs', 2
             unless eval { b(\*STDOUT)->GP; 1 };
@@ -668,8 +681,12 @@ SKIP: {
 
     isa_ok  b(\$rv),        'B::RV',        'ref to GV cloned';
     isa_ok  b($rv),         'B::GV',        'GV cloned';
-    has_mg  $rv,            '*',            '...with magic';
     is      $rv,            \*foo,          '...and is copied';
+
+    SKIP: {
+        skip 'globs have no magic', 1 unless $has_mg;
+        has_mg  $rv,            '*',            '...with magic';
+    }
 }
 
 #define PERL_MAGIC_arylen	  '#' /* Array length ($#ary) */

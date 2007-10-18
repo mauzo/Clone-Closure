@@ -63,6 +63,10 @@ newSV_type(svtype type)
     sv_magic(sv, obj, how, name, namelen)
 #endif
 
+#ifndef isGV_with_GP
+#define isGV_with_GP(sv) 1
+#endif
+
 #ifdef DEBUG_CLONE
 #define TRACEME(a) warn a;
 #else
@@ -552,13 +556,6 @@ sv_clone(HV *SEEN, SV *ref)
             clone = newSVsv(ref);
             break;
 
-#if PERL_VERSION <= 8
-        case SVt_PVBM:	/* 8 */
-            clone = newSVsv(ref);
-            fbm_compile(clone, SvTAIL(ref) ? FBMcf_TAIL : 0);
-            break;
-#endif
-    
         case SVt_PVLV:	/* 9 */
             TRACEME(("  PVLV\n"));
             clone = newSVsv(ref);
@@ -580,6 +577,21 @@ sv_clone(HV *SEEN, SV *ref)
             break;
 
         case SVt_PVGV:	/* 13 */
+            if (isGV_with_GP(ref)) {
+                TRACEME(("  GV\n"));
+                clone = SvREFCNT_inc(ref);
+                break;
+            }
+            /* fall through */
+
+#if PERL_VERSION <= 8
+        case SVt_PVBM:	/* 8 */
+#endif
+            TRACEME(("  PVBM\n"));
+            clone = newSVsv(ref);
+            fbm_compile(clone, SvTAIL(ref) ? FBMcf_TAIL : 0);
+            break;
+    
         case SVt_PVFM:	/* 14 */
         case SVt_PVIO:	/* 15 */
             TRACEME(("  default: 0x%x\n", SvTYPE (ref)));
