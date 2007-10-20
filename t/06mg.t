@@ -8,7 +8,7 @@ BEGIN { eval "use threads; use threads::shared;" }
 use Scalar::Util    qw/blessed reftype tainted/;
 use Test::More;
 use B               qw/SVf_ROK/;
-use ExtUtils::MM;
+use File::Temp      qw/tempfile/;
 use Taint::Runtime  qw/taint_start taint_stop taint/;
 use Clone::Closure  qw/clone/;
 
@@ -131,10 +131,10 @@ sub isnt_flag { return _test_flag 1, @_; }
 
 sub oneliner {
     my ($perl) = @_;
-    $perl =~ tr/\r\n//d;
-    my $cmd = "$^X -e " . MM->quote_literal($perl);
-    my $val = qx/$cmd/;
-    $? and $val = "qx/$cmd/ failed with \$? = $?";
+    my ($SCRIPT, $script) = tempfile('XXXXXXXX', UNLINK => 1);
+    print $SCRIPT $perl;
+    my $val = qx/$^X $script/;
+    $? and $val = "Perl script\n$perl\nfailed with \$? = $?";
     return $val;
 }
 
