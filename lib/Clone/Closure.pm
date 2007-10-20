@@ -8,9 +8,12 @@ use Carp;
 use base 'Exporter';
 our @EXPORT_OK = qw( clone );
 
+our $VERSION = '0.01_01';
+
 use XSLoader;
-our $VERSION = '0.01';
 XSLoader::load __PACKAGE__, $VERSION;
+
+$VERSION = eval $VERSION;
 
 1;
 __END__

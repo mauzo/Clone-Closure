@@ -15,7 +15,7 @@ use Clone::Closure  qw/clone/;
 # Test::Builder has some too-clever-by-half fakery to detect if the test
 # actually dies; however, under 5.6.1 it gets confused by eval {} :(
 
-if ($] < 5.008) {
+if ($] < 5.008007) {
     my $die = $SIG{__DIE__};
     $SIG{__DIE__} = sub {
         ($^S and defined $^S) or $die->();
