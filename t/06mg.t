@@ -15,6 +15,9 @@ use Clone::Closure  qw/clone/;
 # Test::Builder has some too-clever-by-half fakery to detect if the test
 # actually dies; however, under 5.6.1 it gets confused by eval {} :(
 
+# It turns out [rt.cpan.org#12359] that this is caused by my use of $^P,
+# and is fixed by perl@24291 (went into 5.8.7).
+
 if ($] < 5.008007) {
     my $die = $SIG{__DIE__};
     $SIG{__DIE__} = sub {

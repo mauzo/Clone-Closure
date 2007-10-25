@@ -2,3 +2,9 @@ Revision history for Perl extension Clone-Closure.
 
 0.00    2007-07-24
     Started modifying Clone v0.23.
+
+0.01    2007-10-18
+    Initial CPAN version. Working correctly except for loop detection.
+
+0.02    2007-10-24
+    Smoke fixes and POD updates.
