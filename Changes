@@ -4,7 +4,13 @@ Revision history for Perl extension Clone-Closure.
     Started modifying Clone v0.23.
 
 0.01    2007-10-18
-    Initial CPAN version. Working correctly except for loop detection.
+    Initial CPAN version.
+    - Closure cloning (fails to detect loops).
+    - Correct cloning of magic.
+    - Lots of tests.
 
 0.02    2007-10-24
     Smoke fixes and POD updates.
+    - Don't try to use EUMM to quote oneliners
+    - Detect 5.9s with PVBM bug
+
