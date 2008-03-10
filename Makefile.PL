@@ -4,9 +4,10 @@ name            'Clone-Closure';
 license         'perl';
 all_from        'lib/Clone/Closure.pm';
 
-if ($] > 5.009) {
+if ($] > 5.009 and $] < 5.010) {
     require Config;
-    if ($Config::Config{perl_patchlevel} < 32121) {
+    my $patch = $Config::Config{perl_patchlevel};
+    if ($patch and $patch < 32121) {
         warn "This perl has a bug in PVBM handling\n";
         exit 0;
     }

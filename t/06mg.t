@@ -434,7 +434,7 @@ SKIP: {
 
 #define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
 {
-    BEGIN { $tests += 8 }
+    BEGIN { $tests += 9 }
 
     my $qr = qr/foo/;
     my $mg = clone $qr;
@@ -462,6 +462,18 @@ clone qr/foo/;
 PERL
     
     is          $segv,              '',         '...and doesn\'t segfault';
+
+    # see [perl #20683]
+    {
+        my $p = 1;
+        qr/(??{$p})/;
+        clone \$p;
+        
+        for (1..4) { $p++ if /(??{$p})/ }
+
+        is      $p,                 5,          '...and (??{}) works';
+    }
+
 }
 
 #define PERL_MAGIC_sig		  'S' /* %SIG hash */
