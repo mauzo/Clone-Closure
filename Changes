@@ -14,3 +14,6 @@ Revision history for Perl extension Clone-Closure.
     - Don't try to use EUMM to quote oneliners
     - Detect 5.9s with PVBM bug
 
+0.03    2009-06-16
+    Don't clone named subs any more.
+    Fix some 5.10 breakage.
