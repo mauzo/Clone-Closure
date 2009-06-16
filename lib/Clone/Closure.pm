@@ -54,6 +54,11 @@ them in by reference, e.g.
 
     my %copy = %{ clone \%hash };
 
+=head2 Values which are not cloned
+
+Sub (except for L</Closures>), glob, format and IO refs are simply
+duplicated, not cloned.
+
 =head2 Closures
 
 Closures are cloned, unlike with L<Clone|Clone>. Closed-over lexicals
