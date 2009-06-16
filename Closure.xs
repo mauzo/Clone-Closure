@@ -415,7 +415,9 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
 
         if (is_proto) {
             assert(PERL_VERSION < 9);
+#ifdef CvWEAKOUTSIDE_on
             assert(CvWEAKOUTSIDE(val_sv));
+#endif
 
             new_sv = (SV *)CC_cv_clone((CV *)val_sv);
 

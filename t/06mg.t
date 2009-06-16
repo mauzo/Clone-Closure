@@ -464,7 +464,8 @@ PERL
     is          $segv,              '',         '...and doesn\'t segfault';
 
     # see [perl #20683]
-    {
+    SKIP: {
+        $] < 5.008 and skip "(??{}) buggy under 5.6", 1;
         my $p = 1;
         qr/(??{$p})/;
         clone \$p;
