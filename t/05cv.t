@@ -12,39 +12,44 @@ BEGIN { *b = \&B::svref_2object }
 my $tests;
 
 {
-    BEGIN { $tests += 6 }
-
-    my $sub = sub { 
-        return $_[0] + 3;
-    };
-    my $cv  = clone $sub;
-
-    isa_ok  b($cv),             'B::CV',            'anon CV cloned';
-    isnt    $cv,                $sub,               '...not copied';
-    is      $cv->(3),           6,                  '...correctly';
-    is      b($cv)->GV->NAME,   '__ANON__',         '...still __ANON__';
-    is      b($cv)->STASH->NAME,    'main',         '...preserving stash';
-}
-
-{
-    BEGIN { $tests += 6 }
+    BEGIN { $tests += 2 }
 
     sub named_sub { 
         $_[0] + 1;
     }
     my $cv = clone \&named_sub;
 
-    isa_ok  b($cv),             'B::CV',            'named CV cloned';
-    isnt    $cv,                \&named_sub,        '...not copied';
-    is      $cv->(2),           3,                  '...correctly';
-    is      b($cv)->GV->NAME,   'named_sub',        '...preserving name';
-    is      b($cv)->STASH->NAME, 'main',            '...preserving stash';
+    isa_ok  b($cv),             'B::CV',            'named sub cloned';
+    is      $cv,                \&named_sub,        '...as a copy';
+}
 
-    local *typeglob;
-    *typeglob = $cv;
-    undef &named_sub;
+{
+    BEGIN { $tests += 2 }
 
-    ok      defined &typeglob,       '...and can be undefined separately';
+    my $sub = sub { 
+        return $_[0] + 3;
+    };
+    my $cv  = clone $sub;
+
+    isa_ok  b($cv),             'B::CV',            'anon sub cloned';
+    is      $cv,                $sub,               '...is a copy';
+}
+
+{
+    BEGIN { $tests += 6 }
+
+    my $x;
+    my $sub = sub { 
+        $x = $x;
+        return $_[0] + 3;
+    };
+    my $cv  = clone $sub;
+
+    isa_ok  b($cv),             'B::CV',            'closure cloned';
+    isnt    $cv,                $sub,               '...not copied';
+    is      $cv->(3),           6,                  '...correctly';
+    is      b($cv)->GV->NAME,   '__ANON__',         '...still __ANON__';
+    is      b($cv)->STASH->NAME,    'main',         '...preserving stash';
 }
 
 {
@@ -285,6 +290,44 @@ BEGIN {
 
     ok $gone,       'cloned lexical is destroyed';
     ok $gone == 2,  'both copies are destroyed';
+}
+
+{
+    BEGIN { $tests += 4 }
+
+    my $y;
+    my $sub = sub {
+        my $x;
+        (\$x, \$y, sub { \$x, \$y }->());
+    };
+
+    my @sub = $sub->();
+    my $cv = clone $sub;
+    my @cv = $cv->();
+
+    isnt $cv[2], $sub[2],       "sub-sub-scope lexical is cloned";
+    is   $cv[2], $cv[0],        "...correctly";
+    is   $cv[3], $sub[3],       "file-sub-sub-scope lexical is copied";
+    is   $cv[3], $cv[1],        "...correctly";
+}
+
+{
+    BEGIN { $tests += 4 }
+
+    my $y;
+    sub sc {
+        my $x;
+        (\$x, \$y, sub { \$x, \$y }->());
+    }
+
+    my @sub = sc;
+    my $cv = clone \&sc;
+    my @cv = $cv->();
+
+    isnt $cv[2], $sub[2],       "named-sub-scope lexical is cloned";
+    is   $cv[2], $cv[0],        "...correctly";
+    is   $cv[3], $sub[3],       "file-named-sub-scope lexical is copied";
+    is   $cv[3], $cv[1],        "...correctly";
 }
 
 BEGIN { plan tests => $tests }

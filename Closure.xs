@@ -219,8 +219,10 @@ CC_cv_clone(CV *ref)
     assert(!CvUNIQUE(ref));
     /* closure prototype */
     assert(!CvCLONE(ref));
+    /* named sub */
+    assert(CvCLONED(ref));
     /* an instantiated closure shouldn't be WEAKOUTSIDE */
-    assert(!(CvCLONED(ref) && CvWEAKOUTSIDE(ref)));
+    assert(!CvWEAKOUTSIDE(ref));
 
     outside = CvOUTSIDE(ref);
     assert(CvPADLIST(outside));
@@ -345,8 +347,13 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
         /* entries with names are lexicals */
         else if (name_sv != &PL_sv_undef) {
 
+            /* closure prototypes must be copied */
+            if (*name == '&') {
+                can_copy = 1;
+            }
+
             /* non-closures must clone all lexicals */
-            if (!CvCLONED(clone)) {
+            else if (!CvCLONED(clone)) {
                 can_copy = 0;
             }
 
@@ -572,9 +579,23 @@ sv_clone(HV *SEEN, SV *ref)
             break;
 
         case SVt_PVCV:	/* 12 */
-            TRACEME(("  CV\n"));
-            clone = (SV *)CC_cv_clone ((CV *) ref);
-            break;
+            {
+                CV *cv = (CV *)ref;
+                /* we shouldn't be cloning a closure prototype */
+                assert(!CvCLONE(cv));
+
+                if (CvCLONED(cv)) {
+                    /* closures are cloned */
+                    TRACEME(("  CV (closure)\n"));
+                    clone = (SV *)CC_cv_clone(cv);
+                }
+                else {
+                    /* named subs aren't cloned */
+                    TRACEME(("  CV\n"));
+                    clone = SvREFCNT_inc(ref);
+                }
+                break;
+            }
 
         case SVt_PVGV:	/* 13 */
             if (isGV_with_GP(ref)) {
@@ -736,7 +757,9 @@ sv_clone(HV *SEEN, SV *ref)
         av_clone(SEEN, (AV *)ref, (AV *)clone);
     }
     else if ( SvTYPE(ref) == SVt_PVCV ) {
-        pad_clone(SEEN, (CV *)ref, (CV *)clone);
+        if (CvCLONED((CV *)ref)) {
+            pad_clone(SEEN, (CV *)ref, (CV *)clone);
+        }
     }
     /* 3: REFERENCE (inlined for speed) */
     else if (SvROK(ref)) {
