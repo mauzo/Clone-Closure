@@ -4,7 +4,6 @@ use strict;
 use warnings;
 
 use Test::More;
-use Test::Builder;
 
 my $tests;
 
@@ -20,4 +19,4 @@ can_ok 'main', 'clone';
 BEGIN { plan tests => $tests }
 
 BAIL_OUT('module will not load')
-    if grep !$_, Test::Builder->new->summary;
+    if grep !$_, Test::More->builder->summary;
