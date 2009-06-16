@@ -4,15 +4,6 @@ name            'Clone-Closure';
 license         'perl';
 all_from        'lib/Clone/Closure.pm';
 
-if ($] > 5.009 and $] < 5.010) {
-    require Config;
-    my $patch = $Config::Config{perl_patchlevel};
-    if ($patch and $patch < 32121) {
-        warn "This perl has a bug in PVBM handling\n";
-        exit 0;
-    }
-}
-
 requires        'XSLoader'              => 0;
 build_requires  'Test::More'            => '0.68';
 build_requires  'Data::Dumper'          => 0;
@@ -24,5 +15,6 @@ build_requires  'File::Temp'            => '0.16';
 
 ppport;
 
-auto_install;
+makemaker_args INC => "-I.";
+
 WriteAll;
