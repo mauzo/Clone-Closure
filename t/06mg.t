@@ -161,8 +161,10 @@ my $tests;
 #define PERL_MAGIC_overload_table 'c' /* Holds overload table (AMT) on stash */
 
 #define PERL_MAGIC_bm		  'B' /* Boyer-Moore (fast string search) */
-{
+SKIP: {
     BEGIN { $tests += 8 }
+    $] == 5.010000 
+        and skip "5.10.0 has serious bugs in PVBM handling", 8;
 
     use constant PVBM => 'foo';
 
