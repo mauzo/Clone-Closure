@@ -442,10 +442,10 @@ SKIP: {
     skip "qrs aren't magic in this version of perl", $skip
         if $] > 5.010;
 
-    BEGIN { $skip += 8 }
-
     my $qr = qr/foo/;
     my $mg = clone $qr;
+
+    BEGIN { $skip += 3 }
 
     # qr//s are already refs
 
@@ -453,11 +453,15 @@ SKIP: {
     has_mg      $mg,                'r',        'qr// clones';
     isa_ok      $mg,                'Regexp',   '...and';
 
+    BEGIN { $skip += 2 }
+
     SKIP: {
         skip "no B::MAGIC->REGEX", 2 unless B::MAGIC->can('REGEX');
         is_prop     $mg, 'mg/r/REGEX',     $qr,     '...and REGEX';
         is_prop     $mg, 'mg/r/precomp',   $qr,     '...and precomp';
     }
+
+    BEGIN { $skip += 2 }
 
     is          $mg,                   $qr,     '...and value';
     ok          +('barfoobaz' =~ $mg),          '...and still works';
@@ -468,7 +472,9 @@ use Clone::Closure qw/clone/;
 
 clone qr/foo/;
 PERL
-    
+   
+    BEGIN { $skip += 1 }
+
     is          $segv,              '',         '...and doesn\'t segfault';
 
     BEGIN { $tests += $skip }
@@ -479,6 +485,7 @@ BEGIN { $tests += 3 }
 # see [perl #20683]
 SKIP: {
     $] < 5.008 and skip "(??{}) buggy under 5.6", 3;
+
     my $p = 1;
     "x" =~ /(??{$p})/;
     my $mg = clone \$p;
@@ -779,7 +786,7 @@ SKIP: {
     }
 
     {
-        BEGIN { $skip += 7 }
+        BEGIN { $skip += 6 }
 
         my $weak = [5, undef];
         $weak->[1] = \$weak->[0];
