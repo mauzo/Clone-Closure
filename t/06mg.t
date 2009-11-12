@@ -27,6 +27,8 @@ if ($] < 5.008007) {
 
 BEGIN { *b = \&B::svref_2object }
 
+my $RVc = blessed b \\1;
+
 use constant        SVp_SCREAM => 0x08000000;
 
 sub mg {
@@ -435,8 +437,12 @@ SKIP: {
 }
 
 #define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
-{
-    BEGIN { $tests += 9 }
+SKIP: {
+    my $skip;
+    skip "qrs aren't magic in this version of perl", $skip
+        if $] > 5.010;
+
+    BEGIN { $skip += 8 }
 
     my $qr = qr/foo/;
     my $mg = clone $qr;
@@ -465,18 +471,24 @@ PERL
     
     is          $segv,              '',         '...and doesn\'t segfault';
 
-    # see [perl #20683]
-    SKIP: {
-        $] < 5.008 and skip "(??{}) buggy under 5.6", 1;
-        my $p = 1;
-        qr/(??{$p})/;
-        clone \$p;
-        
-        for (1..4) { $p++ if /(??{$p})/ }
+    BEGIN { $tests += $skip }
+}
 
-        is      $p,                 5,          '...and (??{}) works';
-    }
+BEGIN { $tests += 3 }
 
+# see [perl #20683]
+SKIP: {
+    $] < 5.008 and skip "(??{}) buggy under 5.6", 3;
+    my $p = 1;
+    "x" =~ /(??{$p})/;
+    my $mg = clone \$p;
+    
+    has_mg      \$p,            'r',        '(sanity check)'; 
+
+    for (1..4) { $p++ if /(??{$p})/ }
+
+    is          $p,             5,          '(??{}) works after cloning';
+    hasnt_mg    $mg,            'r',        '...and clone isn\'t magic';
 }
 
 #define PERL_MAGIC_sig		  'S' /* %SIG hash */
@@ -693,11 +705,12 @@ SKIP: {
         is_prop \$gv,   'b/GP', \*bar,      '...and is the same glob';
     }
 
-    BEGIN { $tests += 4 }
+    BEGIN { $tests += 5 }
 
     my $rv = clone \*foo;
 
-    isa_ok  b(\$rv),        'B::RV',        'ref to GV cloned';
+    isa_ok  b(\$rv),        $RVc,           'ref to GV cloned';
+    ok      b(\$rv)->ROK,                   '...and is ROK';
     isa_ok  b($rv),         'B::GV',        'GV cloned';
     is      $rv,            \*foo,          '...and is copied';
 
@@ -759,14 +772,14 @@ SKIP: {
         my $rv   = clone $weak;
 
         isa_ok  b(\$rv->[0]),   $type,      'weakref cloned';
-        is_flag \$rv->[0],      SVf_ROK,    '...and a reference';
+        ok      b(\$rv->[0])->ROK,          '...and a reference';
         ok      isweak($rv->[0]),           '...preserving isweak';
         isnt    $rv->[0],       \$sv,       '...not copied';
         is      ${$rv->[0]},    5,          '...correctly';
     }
 
     {
-        BEGIN { $skip += 6 }
+        BEGIN { $skip += 7 }
 
         my $weak = [5, undef];
         $weak->[1] = \$weak->[0];
@@ -793,8 +806,8 @@ SKIP: {
         my $rv   = clone \$circ;
 
         isa_ok  b($rv),         $type,      'weak circular ref cloned';
-        is_flag \$rv,           SVf_ROK,    '...and a reference';
-        is_flag $rv,            SVf_ROK,    '...to a reference';
+        ok      b(\$rv)->ROK,               '...and a reference';
+        ok      b($rv)->ROK,                '...to a reference';
         has_mg  \$circ,         '<',        '(sanity check)';
         has_mg  $rv,            '<',        '...with magic';
         ok      isweak($$rv),               '...preserving isweak';

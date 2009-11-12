@@ -67,11 +67,68 @@ newSV_type(svtype type)
 #define isGV_with_GP(sv) 1
 #endif
 
+static const char *svtypenames[SVt_LAST] = {
+#if PERL_VERSION < 9
+        "NULL",
+        "IV",
+        "NV",
+        "RV",
+        "PV",
+        "PVIV",
+        "PVNV",
+        "MG",
+        "BM",
+        "LV",
+        "AV",
+        "HV",
+        "CV",
+        "GV",
+        "FM",
+        "IO"
+#elif PERL_VERSION < 11
+        "NULL",
+        "BIND",
+        "IV",
+        "NV",
+        "RV",
+        "PV",
+        "PVIV",
+        "PVNV",
+        "PVMG",
+        "GV",
+        "LV",
+        "AV",
+        "HV",
+        "CV",
+        "FM",
+        "IO"
+#else
+        "NULL",
+        "BIND",
+        "IV",
+        "NV",
+        "PV",
+        "PVIV",
+        "PVNV",
+        "MG",
+        "REGEXP",
+        "GV",
+        "LV",
+        "AV",
+        "HV",
+        "CV",
+        "FM",
+        "IO"
+#endif
+};
+
 #ifdef DEBUG_CLONE
 #define TRACEME(a) warn a;
 #else
 #define TRACEME(a)
 #endif
+
+#define TRACE_TYPE(type) TRACEME(("  %s\n", svtypenames[type]))
 
 #define TRACE_SV(action, name, sv)                              \
     TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s%s%s\n", action, name, sv,    \
@@ -568,57 +625,48 @@ sv_clone(HV *SEEN, SV *ref)
 
     TRACEME(("switch: (0x%x)\n", ref));
     switch (SvTYPE (ref)) {
-        case SVt_NULL:	/* 0 */
-            TRACEME(("  NULL\n"));
+
+        case SVt_NULL:
+#if PERL_VERSION < 11
+        case SVt_IV:
+#endif
+        case SVt_NV:
+        case SVt_PV:
+        case SVt_PVIV:
+        case SVt_PVNV:
+        case SVt_PVMG:
+#if PERL_VERSION > 10
+        case SVt_REGEXP:
+#endif
+        case SVt_PVLV:
+        simple_clone:
+            TRACE_TYPE(SvTYPE(ref))
             clone = newSVsv(ref);
             break;
 
-        case SVt_IV:		/* 1 */
-            TRACEME(("  IV\n"));
-            /* fall through */
-
-        case SVt_NV:		/* 2 */
-            TRACEME(("  NV\n"));
-            clone = newSVsv(ref);
+        case SVt_PVFM:
+        case SVt_PVIO:
+        simple_copy:
+            TRACE_TYPE(SvTYPE(ref))
+            clone = SvREFCNT_inc(ref);  /* just return the ref */
             break;
 
-        case SVt_RV:		/* 3 */
-            TRACEME(("  RV\n"));
-            clone = NEWSV(1002, 0);
-            sv_upgrade(clone, SVt_RV);
-            break;
+        case SVt_RV:
+            if (SvROK(ref)) {
+                TRACEME(("  ROK (%s)\n", svtypenames[SvTYPE(ref)]));
+                clone = NEWSV(1002, 0);
+                sv_upgrade(clone, SVt_RV);
+                break;
+            }
+            goto simple_clone;
 
-        case SVt_PV:		/* 4 */
-            TRACEME(("  PV\n"));
-            clone = newSVsv(ref);
-            break;
-
-        case SVt_PVIV:		/* 5 */
-            TRACEME(("  PVIV\n"));
-            /* fall through */
-
-        case SVt_PVNV:		/* 6 */
-            TRACEME(("  PVNV\n"));
-            clone = newSVsv(ref);
-            break;
-
-        case SVt_PVMG:	/* 7 */
-            TRACEME(("  PVMG\n"));
-            clone = newSVsv(ref);
-            break;
-
-        case SVt_PVLV:	/* 9 */
-            TRACEME(("  PVLV\n"));
-            clone = newSVsv(ref);
-            break;
-
-        case SVt_PVAV:	/* 10 */
-            TRACEME(("  AV\n"));
+        case SVt_PVAV:
+            TRACE_TYPE(SVt_PVAV);
             clone = (SV *)newAV();
             break;
 
-        case SVt_PVHV:	/* 11 */
-            TRACEME(("  HV\n"));
+        case SVt_PVHV:
+            TRACE_TYPE(SVt_PVHV);
             clone = (SV *)newHV();
             break;
 
@@ -642,28 +690,19 @@ sv_clone(HV *SEEN, SV *ref)
                 break;
             }
 
-        case SVt_PVGV:	/* 13 */
-            if (isGV_with_GP(ref)) {
-                TRACEME(("  GV\n"));
-                clone = SvREFCNT_inc(ref);
-                break;
-            }
+        case SVt_PVGV:
+            if (isGV_with_GP(ref))
+                goto simple_copy;
             /* fall through */
 
-#if PERL_VERSION <= 8
-        case SVt_PVBM:	/* 8 */
+#if PERL_VERSION < 9
+        case SVt_PVBM:
 #endif
             TRACEME(("  PVBM\n"));
             clone = newSVsv(ref);
             fbm_compile(clone, SvTAIL(ref) ? FBMcf_TAIL : 0);
             break;
     
-        case SVt_PVFM:	/* 14 */
-        case SVt_PVIO:	/* 15 */
-            TRACEME(("  default: 0x%x\n", SvTYPE (ref)));
-            clone = SvREFCNT_inc(ref);  /* just return the ref */
-            break;
-
         default:
             croak("unknown type of scalar: 0x%x", SvTYPE(ref));
     }
@@ -688,11 +727,18 @@ sv_clone(HV *SEEN, SV *ref)
 
             switch (mg->mg_type) {
                 case PERL_MAGIC_qr:
-                {
+#if PERL_VERSION < 11
+                /* 'r' magic with a SvPVX is for storing (??{})
+                 * patterns. 'r' magic without is for qr//.
+                 */
+                if (SvPVX(ref) == NULL) {
                     regexp *const re = (regexp *)mg->mg_obj;
                     obj = (SV *)ReREFCNT_inc(re); 
                     break;
                 }
+#endif
+                keepmg = 0;
+                break;
 
                 case PERL_MAGIC_utf8:
                 {

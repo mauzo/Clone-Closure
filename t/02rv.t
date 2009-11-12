@@ -7,54 +7,60 @@ use Test::More;
 use Test::Builder;
 use Clone::Closure  qw/clone/;
 use Scalar::Util    qw/blessed refaddr/;
-use B               qw/SVf_ROK/;
+use B;
 
 BEGIN { *b = \&B::svref_2object }
 
 my $tests;
 
+my $RVc = blessed b(\\1);
+
 {
-    BEGIN { $tests += 3 }
+    BEGIN { $tests += 4 }
 
     my $scalar = 5;
     my $rv = clone \$scalar;
 
-    isa_ok  b(\$rv),        'B::RV',        'RV cloned';
+    isa_ok  b(\$rv),        $RVc,           'RV cloned';
+    ok      b(\$rv)->ROK,                   '...and is ROK';
     isnt    $rv,            \$scalar,       '...not copied';
     is      $$rv,           5,              '...correctly';
 }
 
 {
-    BEGIN { $tests += 3 }
+    BEGIN { $tests += 4 }
 
     my $rv = clone \undef;
 
-    isa_ok  b(\$rv),     'B::RV',        'ref to undef cloned';
-    is      $rv,         \undef,         '...as a copy';
-    ok      !defined($$rv),              '...correctly';
-}
-
-{
-    BEGIN { $tests += 3 }
-
-    my $circ;
-    $circ = \$circ;
-    my $rv = clone $circ;
-
-    isa_ok  b(\$rv),       'B::RV',        'circular ref cloned';
-    isnt    $rv,           \$circ,         '...not copied';
-    is      $$rv,          $rv,            '...correctly';
+    isa_ok  b(\$rv),     $RVc,          'ref to undef cloned';
+    ok      b(\$rv)->ROK,               '...and is ROK';
+    is      $rv,         \undef,        '...as a copy';
+    ok      !defined($$rv),             '...correctly';
 }
 
 {
     BEGIN { $tests += 4 }
 
+    my $circ;
+    $circ = \$circ;
+    my $rv = clone $circ;
+
+    isa_ok  b(\$rv),       $RVc,            'circular ref cloned';
+    ok      b(\$rv)->ROK,                   '...and is ROK';
+    isnt    $rv,           \$circ,          '...not copied';
+    is      $$rv,          $rv,             '...correctly';
+}
+
+{
+    BEGIN { $tests += 5 }
+
     my $obj     = 6;
     my $blessed = bless \$obj, 'Foo';
     my $rv     = clone $blessed;
 
-    isa_ok  b(\$rv),       'B::RV',        'blessed ref cloned';
-    is      blessed($rv),  'Foo',          '...preserving class';
+    isa_ok  b(\$rv),       $RVc,            'blessed ref cloned';
+    ok      b(\$rv)->ROK,                   '...and ROK';
+    is      blessed($rv),  'Foo',           '...preserving class';
     isnt    refaddr($rv),  refaddr($blessed),
                                             '...not copied';
     is      $$rv,          6,               '...correctly';
