@@ -25,6 +25,7 @@ t/05cv.t
 t/06mg.t
 t/06refcnt.t
 t/07magic.t
+t/07rx.t
 t/dclone.t
 t/dump.pl
 t/Foo.pm
