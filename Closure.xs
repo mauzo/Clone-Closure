@@ -56,6 +56,10 @@
 #define isGV_with_GP(sv) 1
 #endif
 
+#if PERL_VERSION < 9 || (PERL_VERSION == 8 && PERL_SUBVERSION < 9)
+#define SVt_LAST 16
+#endif
+
 static const char *svtypenames[SVt_LAST] = {
 #if PERL_VERSION < 9
         "NULL",

@@ -11,6 +11,9 @@ use B;
 
 BEGIN { *b = \&B::svref_2object }
 
+defined &B::SV::ROK or
+    *B::SV::ROK = sub { $_[0]->FLAGS & B::SVf_ROK };
+
 my $tests;
 
 my $RVc = blessed b(\\1);

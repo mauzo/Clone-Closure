@@ -25,6 +25,9 @@ if ($] < 5.008007) {
     };
 }
 
+defined &B::SV::ROK or
+    *B::SV::ROK = sub { $_[0]->FLAGS & B::SVf_ROK };
+
 BEGIN { *b = \&B::svref_2object }
 
 my $RVc = blessed b \\1;
