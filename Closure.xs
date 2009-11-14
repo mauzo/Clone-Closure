@@ -2,6 +2,7 @@
 #include "perl.h"
 #include "XSUB.h"
 
+#define NEED_newSV_type
 #include "ppport.h"
 
 /* stuff that should probably be in ppport.h, but isn't */
@@ -35,18 +36,6 @@
 
 #ifndef SvWEAKREF
 #define SvWEAKREF(sv) (0)
-#endif
-
-#ifndef newSV_type
-static SV *
-newSV_type(svtype type)
-{
-    SV *sv;
-
-    sv = newSV(0);
-    sv_upgrade(sv, type);
-    return sv;
-}
 #endif
 
 #ifndef hv_iternext_flags
