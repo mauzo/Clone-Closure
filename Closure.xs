@@ -38,6 +38,10 @@
 #define SvWEAKREF(sv) (0)
 #endif
 
+#ifndef SvPADSTALE
+#define SvPADSTALE(sv) (0)
+#endif
+
 #ifndef hv_iternext_flags
 #define hv_iternext_flags(hv, fl) hv_iternext(hv)
 #endif
@@ -132,17 +136,35 @@ static const char *svtypenames[SVt_LAST] = {
 #define TRACE_TYPE(type) TRACEME(("  %s\n", svtypenames[type]))
 
 #define TRACE_SV(action, name, sv)                              \
-    TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s%s%s\n", action, name, sv,    \
+    TRACEME(("%s (%s) = 0x%x(%d) [%x]%s%s%s%s%s%s\n", action, name, sv,    \
         SvREFCNT(sv), SvFLAGS(sv),                              \
-        (SvPADMY(sv)   ? " PADMY"   : ""),                      \
-        (SvPADTMP(sv)  ? " PADTMP"  : ""),                      \
-        (SvTEMP(sv)    ? " TEMP"    : ""),                      \
-        (SvFAKE(sv)    ? " FAKE"    : ""),                      \
-        (SvMAGICAL(sv) ? " MAGIC"   : "")                       \
+        (SvPADMY(sv)    ? " PADMY"    : ""),                    \
+        (SvPADTMP(sv)   ? " PADTMP"   : ""),                    \
+        (SvPADSTALE(sv) ? " PADSTALE" : ""),                    \
+        (SvTEMP(sv)     ? " TEMP"     : ""),                    \
+        (SvFAKE(sv)     ? " FAKE"     : ""),                    \
+        (SvMAGICAL(sv)  ? " MAGIC"    : "")                     \
     ))
 
-#define TRACE_SCOPE(cv) TRACEME(("scope 0x%x:%s\n", cv, \
-    (cv && CvUNIQUE(cv)) ? " UNIQUE" : ""))
+#define CC_CvSTASH(cv) \
+    (CvGV(cv) ? GvSTASH(CvGV(cv)) ? HvNAME(GvSTASH(CvGV(cv))) \
+        ? HvNAME(GvSTASH(CvGV(cv))) \
+        : "(no name)" : "(no stash)" : "(no GV)")
+#define CC_CvNAME(cv) \
+    (CvGV(cv) ? GvNAME(CvGV(cv)) ? GvNAME(CvGV(cv)) \
+    : "(no name)" : "(no GV)")
+
+#define TRACE_SCOPE(cv) TRACEME((                               \
+    "scope 0x%x(%s::%s) [%x]%s%s%s%s%s%s {%s}\n", \
+        cv, CC_CvSTASH(cv), CC_CvNAME(cv), CvFLAGS(cv),         \
+        ((cv && CvUNIQUE(cv))   ? " UNIQUE"     : ""),          \
+        ((cv && CvEVAL(cv))     ? " EVAL"       : ""),          \
+        ((cv && SvFAKE(cv))     ? " FAKE"       : ""),          \
+        ((cv && CvSPECIAL(cv))  ? " SPECIAL"    : ""),          \
+        ((cv && CvOUTSIDE(cv))  ? " OUTSIDE"    : ""),          \
+        ((cv && CvCLONED(cv))   ? " CLONED"     : ""),          \
+        (CvROOT(cv) ? OP_NAME(CvROOT(cv)) : "(no ROOT)")        \
+    ))
 
 #define TRACE_MG(action, type, ptr, len, obj)       \
     TRACEME(("%s (%c magic) = 0x%x[%d], 0x%x\n",    \
@@ -169,7 +191,10 @@ static void av_clone        (HV *SEEN, AV *ref, AV *clone);
 static SV  *sv_clone        (HV *SEEN, SV *ref);
 static CV  *CC_cv_clone     (CV *ref);
 static void pad_clone       (HV *SEEN, CV *ref, CV *clone);
-static CV  *pad_findscope   (CV *start, SV *ref);
+static CV  *pad_findscope   (CV *start, SV *ref, I32 *padix);
+static bool cv_toplevel     (CV *scope);
+static bool pad_live        (CV *scope, I32 padix, SV *val_sv, 
+                                const char *name);
 
 static void
 hv_clone(HV *SEEN, HV *ref, HV *clone)
@@ -215,6 +240,16 @@ av_clone(HV *SEEN, AV *ref, AV *clone)
 
     if (SvREFCNT(ref) > 1)
         CLONE_STORE(ref, (SV *)clone);
+
+    if (AvREAL(ref))
+        AvREAL_on(clone);
+    else
+        AvREAL_off(clone);
+
+    if (AvREIFY(ref))
+        AvREIFY_on(clone);
+    else
+        AvREIFY_off(clone);
 
     arrlen = av_len(ref);
     av_extend(clone, arrlen);
@@ -384,10 +419,10 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
 
         /* The following types of entries exist in pads... */
 
-        /* @_ must be cloned */
+        /* @_ must be skipped */
         if (i == 0) {
-            name = "@_";
-            can_copy = 0;
+            TRACE_SV("skip", "@_", val_sv);
+            continue;
         }
 
         /* 'our' entries have everything in the name, and need no pad
@@ -435,25 +470,18 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
             /* closed-over lexicals need checking */
             else {
                 CV *scope;
+                I32 padix;
 
                 /* start with the scope that declared the lexical... */
-                scope = pad_findscope(clone, name_sv);
+                scope = pad_findscope(clone, name_sv, &padix);
 
-                /* even if this scope is unique, it may be inside one
-                 * which isn't:
-                 *     sub foo { eval q/my $x; sub { $x; }/; }
-                 * eval STRING is always CvUNIQUE */
-                while (scope && CvUNIQUE(scope)) {
-                    scope = CvOUTSIDE(scope);
-                    TRACE_SCOPE(scope);
-                }
-
-                /* XXX handle locating loops: see cop@269 */
-
-                /* if this lexical was defined in a scope that can only
-                 * run once it can be copied, otherwise it must be
-                 * cloned */
-                can_copy = (!scope || CvUNIQUE(scope));
+                if (
+                    cv_toplevel(scope) || 
+                    pad_live(scope, padix, val_sv, name)
+                )
+                    can_copy = 1;
+                else
+                    can_copy = 0;
             }
         }
 
@@ -535,11 +563,12 @@ pad_clone(HV *SEEN, CV *ref, CV *clone)
 /* mostly stolen from pad.c:pad_findlex */
 
 static CV *
-pad_findscope(CV *scope, SV *name_sv)
+pad_findscope(CV *scope, SV *name_sv, I32 *padix)
 {
     const char  *name = SvPVX_const(name_sv);
     U32          seq;
     CV          *last_fake = scope;
+    I32          last_fake_ix;
 
 #ifdef CvOUTSIDE_SEQ
 #define MOVE_OUT(scp, sq) sq = CvOUTSIDE_SEQ(scp), scp = CvOUTSIDE(scp)
@@ -580,6 +609,7 @@ pad_findscope(CV *scope, SV *name_sv)
 
             if (SvFAKE(sv)) {
                 last_fake = scope;
+                last_fake_ix = off;
                 continue;
             }
         
@@ -588,6 +618,7 @@ pad_findscope(CV *scope, SV *name_sv)
                 && seq <= COP_SEQ_RANGE_HIGH(sv)
             )
             {
+                *padix = off;
                 return scope;
             }
             else {
@@ -600,7 +631,69 @@ pad_findscope(CV *scope, SV *name_sv)
 
     TRACEME(("no scope found; returning last_fake = 0x%x\n",
         last_fake));
+    *padix = last_fake_ix;
     return last_fake;
+}
+
+static bool
+cv_toplevel(CV *scope)
+{
+    TRACEME(("Looking for a non-UNIQUE scope"));
+
+    /* even if this scope is unique, it may be inside one
+     * which isn't:
+     *     sub foo { eval q/my $x; sub { $x; }/; }
+     * eval STRING is always CvUNIQUE */
+    while (scope && CvUNIQUE(scope)) {
+        TRACE_SCOPE(scope);
+        scope = CvOUTSIDE(scope);
+    }
+
+    if (scope)
+        TRACE_SCOPE(scope);
+
+    return (!scope || CvUNIQUE(scope));
+}
+
+
+static bool
+pad_live(CV *scope, I32 padix, SV *val_sv, const char *name)
+{
+    I32 d;
+
+    if (SvPADSTALE(val_sv)) {
+        /* if the pad entry is stale, it's not live */
+        TRACE_SV("STALE", name, val_sv);
+        return 0;
+    }
+
+    if (!CvPADLIST(scope)) {
+        /* an undefed sub has no live lexicals */
+        TRACE_SV("UNDEF", name, val_sv);
+        return 0;
+    }
+
+    TRACEME(("Looking through %d pads of:\n", CvDEPTH(scope)));
+    TRACE_SCOPE(scope);
+
+    for (d = 1; d <= CvDEPTH(scope); d++) {
+        AV *pado = (AV *) *av_fetch(CvPADLIST(scope), d, FALSE);
+        SV **o;
+
+        TRACEME(("Looking in pad at depth %d\n", d));
+
+        /* if the we are in a valid pad, we are live */
+        if (
+            (o = av_fetch(pado, padix, 0)) &&
+            (*o == val_sv)
+        ) {
+            TRACE_SV("LIVE", name, *o);
+            return 1;
+        }
+    }
+
+    TRACE_SV("DEAD", name, val_sv);
+    return 0;
 }
 
 static SV *

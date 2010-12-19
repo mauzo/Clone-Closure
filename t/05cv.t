@@ -330,4 +330,71 @@ BEGIN {
     is   $cv[3], $cv[1],        "...correctly";
 }
 
+{
+    sub live {
+        my $x;
+        my $sub = sub { \$x };
+        my $cv = clone $sub;
+        return \$x, $sub, $cv;
+    }
+
+    BEGIN { $tests += 3 }
+
+    my ($ref, $sub, $cv) = live;
+
+    is      $sub->(),   $ref,   "(sanity check)";
+    is      $cv->(),    $ref,   "live lexicals are copied";
+
+    my $cv2 = clone $sub;
+
+    isnt    $cv2->(),   $ref.   "dead lexicals are cloned";
+}
+
+{
+    package t::Live;
+
+    use Clone::Closure qw/clone/;
+
+    my $G;
+
+    sub new {
+        my @L;
+
+        return bless {
+            G   => sub { \$G },
+            L   => sub { \@L },
+            cl  => sub {
+                my ($s, $n) = @_;
+                my $cl = clone [$s, sub { push @L, $n }];
+                my ($rv, $cb) = @$cl;
+                $cb->();
+                return $rv;
+            },
+        };
+    }
+
+    our $AUTOLOAD;
+    sub AUTOLOAD {
+        (my $m = $AUTOLOAD) =~ s/.*:://;
+        $m = $_[0]{$m};
+        goto &$m;
+    }
+
+    sub DESTROY { }
+}
+
+{
+    BEGIN { $tests += 5 }
+
+    my $o = t::Live->new;
+    my $x = [1];
+    my $n = $o->cl($x);
+
+    is      $n->G,              $o->G,  "globals are shared";
+    isnt    $n->L,              $o->L,  "locals are cloned";
+    is      scalar @{ $o->L },  0,      "cloning doesn't affect old object";
+    is      scalar @{ $n->L },  1,      "cloning does affect new object";
+    is      $n->L->[0],         $x,     "...correctly";
+}
+
 BEGIN { plan tests => $tests }
