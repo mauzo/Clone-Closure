@@ -56,6 +56,14 @@
 #define isGV_with_GP(sv) 1
 #endif
 
+#ifndef CvGV_set
+#define CvGV_set(cv,gv) CvGV(cv) = (gv)
+#endif
+
+#ifndef CvSTASH_set
+#define CvSTASH_set(cv,st) CvSTASH(cv) = (st)
+#endif
+
 #if PERL_VERSION < 9 || (PERL_VERSION == 8 && PERL_SUBVERSION < 9)
 #define SVt_LAST 16
 #endif
@@ -291,8 +299,8 @@ CC_cv_clone(CV *ref)
 #else
     CvFILE(clone)           = CvFILE(ref);
 #endif
-    CvGV(clone)             = CvGV(ref);
-    CvSTASH(clone)          = CvSTASH(ref);
+    CvGV_set(clone,         CvGV(ref));
+    CvSTASH_set(clone,      CvSTASH(ref));
 
     OP_REFCNT_LOCK;
     CvROOT(clone)           = OpREFCNT_inc(CvROOT(ref));
