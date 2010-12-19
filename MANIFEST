@@ -1,18 +1,9 @@
+Build.PL
 Changes
-Closure.xs
-inc/Module/Install.pm
-inc/Module/Install/Base.pm
-inc/Module/Install/Can.pm
-inc/Module/Install/Compiler.pm
-inc/Module/Install/Fetch.pm
-inc/Module/Install/Makefile.pm
-inc/Module/Install/Metadata.pm
-inc/Module/Install/Win32.pm
-inc/Module/Install/WriteAll.pm
 lib/Clone/Closure.pm
-Makefile.PL
-MANIFEST
-META.yml			Module meta-data (added by MakeMaker)
+lib/Clone/Closure.xs
+MANIFEST			This list of files
+META.yml
 ppport.h
 t/00use.t
 t/01sv.t
