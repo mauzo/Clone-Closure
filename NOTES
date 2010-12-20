@@ -1,0 +1,56 @@
+Given
+
+    my $G;
+
+    build {
+        my $L;
+
+        method foo => sub { my $l };
+        method bar => sub { my $l };
+    };
+
+    my $o = construct;
+    my $p = clone $o;
+
+which is equivalent to
+
+    my $G;
+
+    my $o = (sub {
+        my $L;
+        bless {
+            foo => sub { my $l; },
+            bar => sub { my $l; },
+        };
+    })->();
+
+    my $p = Clone::Closure::clone $o;
+
+$o and $p should share $G but not share $L.
+
+LIVE
+
+The live tests are to support this construction:
+
+    build {
+        my @dirs;
+        method catdir => sub {
+            my ($new) = @_;
+            clone self, sub { push @dirs, $new };
+        };
+    };
+
+where it is important that the closed-over $new is shared, not copied.
+This is equivalent to
+
+    my $build = sub {
+        my @dirs;
+        my $self;
+        $self = sub {
+            my ($new) = @_;
+            clone(sub { push @dirs, $new; $self })->();
+        };
+    };
+
+    my $o = $build->();
+    my $n = $o->("foo");
