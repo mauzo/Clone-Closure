@@ -64,6 +64,10 @@
 #define CvSTASH_set(cv,st) CvSTASH(cv) = (st)
 #endif
 
+#ifndef CVf_CVGV_RC
+#define CVf_CVGV_RC 0
+#endif
+
 #if PERL_VERSION < 9 || (PERL_VERSION == 8 && PERL_SUBVERSION < 9)
 #define SVt_LAST 16
 #endif
@@ -291,7 +295,7 @@ CC_cv_clone(CV *ref)
     assert(!(outside && CvCLONE(outside)));
 
     clone = (CV *)newSV_type(SvTYPE(ref));
-    CvFLAGS(clone) = CvFLAGS(ref);
+    CvFLAGS(clone) = CvFLAGS(ref) & ~CVf_CVGV_RC;
 
 #ifdef USE_ITHREADS
     CvFILE(clone)           = CvISXSUB(ref) ? CvFILE(ref)
